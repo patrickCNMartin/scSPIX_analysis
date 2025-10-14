@@ -2,7 +2,7 @@
   description = "SPIX Analysis";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-stable";  # Use stable release
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -21,8 +21,7 @@
 
           shellHook = ''
             echo "SPIX Analysis Shell Activated"
-
-           '';
+          '';
         };
       }
     );
