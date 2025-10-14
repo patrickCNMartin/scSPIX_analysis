@@ -1,2 +1,10 @@
 digraph "dag" {
+p0 [shape=point,label="",fixedsize=true,width=0.1,xlabel="Channel.of"];
+p1 [label="download_data:download_stereo"];
+p0 -> p1 [label="stereo_url"];
+
+p1 [label="download_data:download_stereo"];
+p2 [shape=point];
+p1 -> p2;
+
 }

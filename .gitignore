@@ -1,6 +1,7 @@
 # Nextflo run files
 .nextflow/
 .logs/
+work/
 
 # Never load local data if present
 data/
