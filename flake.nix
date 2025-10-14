@@ -2,7 +2,7 @@
   description = "SPIX Analysis";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-stable";  # Use stable release
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -14,14 +14,15 @@
         devShells.default = pkgs.mkShell {
           buildInputs = [
             pkgs.python3
-            pkgs.micromamba
+            pkgs.mi
             pkgs.git
             pkgs.nextflow
           ];
 
           shellHook = ''
             echo "SPIX Analysis Shell Activated"
-          '';
+
+           '';
         };
       }
     );
