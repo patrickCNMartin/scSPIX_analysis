@@ -14,7 +14,7 @@
         devShells.default = pkgs.mkShell {
           buildInputs = [
             pkgs.python3
-            pkgs.mi
+            pkgs.micromamba
             pkgs.git
             pkgs.nextflow
           ];

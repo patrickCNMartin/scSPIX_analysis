@@ -52,7 +52,7 @@ workflow download_data {
     //     println "Visium Data already present - Skipping"
     // }
     
-    stereo_data = file("${params.dwl.stereo.rename}")
+    stereo_data = file("${params.dwl.data}/${params.dwl.stereo.rename}")
     if (!stereo_data) {
         stereo_url = Channel.fromPath("${params.dwl.stereo.url}")
         download_stereo(stereo_url)
