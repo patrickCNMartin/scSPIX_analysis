@@ -1,0 +1,29 @@
+Bootstrap: docker
+From: mambaorg/micromamba:latest
+
+# Copy files from host to container
+%files
+    spix_1007.yml /app/spix_1007.yml
+
+%post
+    mkdir -p /app
+    cd /app
+
+    # Install system dependencies
+    apt-get update && \
+    apt-get install -y --no-install-recommends build-essential git && \
+    rm -rf /var/lib/apt/lists/*
+
+    # Install dependencies via micromamba
+    micromamba install -q -y -n base -f /app/spix_1007.yml
+    micromamba clean --all --yes
+
+%environment
+    export HOME=/app
+    export PYTHONUNBUFFERED=1
+    export PATH="/opt/conda/bin:$PATH"
+    export MAMBA_ROOT_PREFIX="/opt/conda"
+
+%runscript
+    cd /app
+    exec "$@"
