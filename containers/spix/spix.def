@@ -1,21 +1,21 @@
-Bootstrap: docker
-From: mambaorg/micromamba:latest
 
-# Copy files from host to container
+Bootstrap: docker
+From: docker.io/mambaorg/micromamba:2.3.2@sha256:3f92db74f6780f60c9a2c6d983c76360a1d4cfdcb597395ab9e64747f067b15b
+
 %files
-    spix_1007.yml /app/spix_1007.yml
+    spix_1007.yml /tmp/spix_1007.yml
 
 %post
-    mkdir -p /app
-    cd /app
+    apt-get update
+    apt-get install -y \
+        build-essential \
+        python3-dev \
+        gcc \
+        g++
+    apt-get clean
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
-    # Install system dependencies
-    apt-get update && \
-    apt-get install -y --no-install-recommends build-essential git && \
-    rm -rf /var/lib/apt/lists/*
-
-    # Install dependencies via micromamba
-    micromamba install -q -y -n base -f /app/spix_1007.yml
+    micromamba install -y -n base -f /tmp/spix_1007.yml
     micromamba clean --all --yes
 
 %environment
@@ -25,5 +25,4 @@ From: mambaorg/micromamba:latest
     export MAMBA_ROOT_PREFIX="/opt/conda"
 
 %runscript
-    cd /app
     exec "$@"
