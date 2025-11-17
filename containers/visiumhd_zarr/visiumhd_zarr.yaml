@@ -1,0 +1,9 @@
+name: visiumhd_zarr
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+    - spatialdata-io

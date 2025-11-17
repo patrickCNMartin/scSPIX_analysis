@@ -1,28 +1,57 @@
-
 Bootstrap: docker
-From: docker.io/mambaorg/micromamba:2.3.2@sha256:3f92db74f6780f60c9a2c6d983c76360a1d4cfdcb597395ab9e64747f067b15b
+From: ubuntu:24.04
 
 %files
-    spix_1007.yml /tmp/stereopy.yml
+    stereopy.yml /tmp/stereopy.yml
 
 %post
+    set -eux
+    
+    # Update package manager
     apt-get update
-    apt-get install -y \
+    apt-get upgrade -y
+    
+    # Install essential build tools
+    apt-get install -y --no-install-recommends \
         build-essential \
         python3-dev \
         gcc \
-        g++
+        g++ \
+        git \
+        wget \
+        curl \
+        conda \
+        mamba
+    
+    # Clean up apt cache to reduce image size
     apt-get clean
     rm -rf /var/lib/apt/lists/* /var/cache/apt/*
-
-    micromamba install -y -n base -f /tmp/stereopy.yml
-    micromamba clean --all --yes
+    
+    # Initialize conda
+    conda init bash
+    
+    # Update conda base environment
+    conda config --system --prepend channels conda-forge
+    conda update -n base -c defaults conda -y
+    
+    # Create and activate the stereopy environment from YAML
+    conda env create -f /tmp/stereopy.yml
+    
+    # Clean conda cache
+    conda clean --all --yes
+    
+    # Verify installation
+    conda env list
 
 %environment
-    export HOME=/app
+    export PATH="/opt/conda/envs/stereopy/bin:/opt/conda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    export CONDA_DEFAULT_ENV=stereopy
+    export CONDA_PREFIX=/opt/conda/envs/stereopy
     export PYTHONUNBUFFERED=1
-    export PATH="/opt/conda/bin:$PATH"
-    export MAMBA_ROOT_PREFIX="/opt/conda"
+    export HOME=/home/appuser
 
 %runscript
+    # Activate the stereopy environment and run the command
+    eval "$(conda shell.bash hook)"
+    conda activate stereopy
     exec "$@"

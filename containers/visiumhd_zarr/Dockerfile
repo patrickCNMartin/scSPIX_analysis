@@ -1,12 +1,12 @@
 FROM python:3.12-slim
 
 # Copy the conda environment file
-COPY spix_1007.yml /tmp/spix_1007.yml
+COPY visiumhd_zarr.yml /tmp/visiumhd_zarr.yml
 
 # Set environment variables
-ENV PATH="/opt/conda/envs/spix_1007/bin:/opt/conda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-    CONDA_DEFAULT_ENV=spix_1007 \
-    CONDA_PREFIX=/opt/conda/envs/spix_1007 \
+ENV PATH="/opt/conda/envs/visiumhd_zarr/bin:/opt/conda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+    CONDA_DEFAULT_ENV=visiumhd_zarr \
+    CONDA_PREFIX=/opt/conda/envs/visiumhd_zarr \
     PYTHONUNBUFFERED=1 \
     HOME=/home/appuser
 
@@ -39,7 +39,7 @@ RUN set -eux && \
     conda update -n base -c defaults conda -y && \
     \
     # Create and activate the spix environment from YAML
-    conda env create -f /tmp/spix_1007.yml && \
+    conda env create -f /tmp/visiumhd_zarr.yml && \
     \
     # Clean conda cache
     conda clean --all --yes && \
@@ -48,5 +48,5 @@ RUN set -eux && \
     conda env list
 
 # Set the entrypoint to activate conda and the spix environment
-ENTRYPOINT ["bash", "-c", "source activate spix_1007 && exec \"$@\"", "--"]
+ENTRYPOINT ["bash", "-c", "source activate visiumhd_zarr && exec \"$@\"", "--"]
 CMD ["/bin/bash"]
