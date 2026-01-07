@@ -200,7 +200,7 @@
               
               mkdir -p $out/lib/${pythonVersion.libPrefix}/site-packages
               
-              pip install --target $out/lib/${pythonVersion.libPrefix}/site-packages --no-deps -r ${spixPipRequirements}
+              pip install --target $out/lib/${pythonVersion.libPrefix}/site-packages -r ${spixPipRequirements}
               
               # Copy SPIX source to a writable location for building
               cp -r ${spix} $TMPDIR/spix-src
