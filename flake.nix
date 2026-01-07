@@ -45,13 +45,15 @@
             scikit-image
             anndata
             joblib
-            opencv4
+            # opencv4 - let opencv-python from pip take precedence
             networkx
             shapely
             tqdm
-            # Note: scanpy removed due to platform compatibility issues
-            # Note: Some dependencies like squidpy, alphashape, igraph, harmonypy,
-            # NaiveDE, minisom, tqdm_joblib are in pip requirements
+            minisom  # Available in nixpkgs
+            python-igraph  # Available in nixpkgs (igraph package)
+            # Note: scanpy removed due to platform compatibility issues (tuna dependency)
+            # Note: Some dependencies like squidpy, alphashape, harmonypy,
+            # NaiveDE, tqdm_joblib are in pip requirements
           ];
 
           # SPIX might have additional dependencies that need to be installed
@@ -86,8 +88,8 @@
           statsmodels
 
           # Bioinformatics/spatial analysis packages
-          scanpy
           anndata
+          # scanpy - installed via pip due to platform compatibility issues
           # celltypist - may need pip
           # squidpy - may need pip
           # spatialdata - may need pip
@@ -101,7 +103,7 @@
           imageio
           # imagecodecs - may need pip
           # tifffile - may need pip
-          opencv4
+          # opencv4 - let opencv-python from pip take precedence
 
           # Data handling
           zarr
