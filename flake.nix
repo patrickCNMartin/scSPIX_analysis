@@ -2,9 +2,9 @@
   description = "SPIX Analysis";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable"; # For dev shell
-    nixpkgs-stable.url = "github:NixOS/nixpkgs/nixos-24.05"; # For OCI images (spix, visiumhd-zarr)
-    nixpkgs-22-11.url = "github:NixOS/nixpkgs/nixos-22.11"; # For stereopy OCI image (python38)
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs-stable.url = "github:NixOS/nixpkgs/nixos-24.05";
+    nixpkgs-22-11.url = "github:NixOS/nixpkgs/nixos-22.11";
     flake-utils.url = "github:numtide/flake-utils";
     spix.url = "github:whistle-ch0i/SPIX";
     spix.flake = false;
@@ -13,144 +13,11 @@
   outputs = { self, nixpkgs, nixpkgs-stable, nixpkgs-22-11, flake-utils, spix }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        # Unstable nixpkgs for dev shell
         pkgs = import nixpkgs { inherit system; };
-        # Stable nixpkgs for OCI images
         pkgsStable = import nixpkgs-stable { inherit system; };
-        # Older nixpkgs (22.11) for stereopy (requires python38)
         pkgsOld = import nixpkgs-22-11 { inherit system; };
 
-        # SPIX package built from GitHub source
-        spixPackage = pkgs.python312Packages.buildPythonPackage {
-          pname = "SPIX";
-          version = "0.1.0";
-          src = spix;
-          format = "pyproject";
-
-          # Build dependencies - setuptools and wheel are required by SPIX's pyproject.toml
-          nativeBuildInputs = with pkgs.python312Packages; [
-            setuptools
-            wheel
-          ];
-
-          # Runtime dependencies from SPIX pyproject.toml
-          propagatedBuildInputs = with pkgs.python312Packages; [
-            numpy
-            scipy
-            matplotlib
-            pandas
-            scikit-learn
-            requests
-            seaborn
-            scikit-image
-            anndata
-            joblib
-            # opencv4 - let opencv-python from pip take precedence
-            networkx
-            shapely
-            tqdm
-            minisom  # Available in nixpkgs
-            python-igraph  # Available in nixpkgs (igraph package)
-            # Note: scanpy removed due to platform compatibility issues (tuna dependency)
-            # Note: Some dependencies like squidpy, alphashape, harmonypy,
-            # NaiveDE, tqdm_joblib are in pip requirements
-          ];
-
-          # SPIX might have additional dependencies that need to be installed
-          # Let's try to build it and see what happens
-          doCheck = false; # Skip tests for now
-        };
-
-        # SPIX Python environment - packages from spix_1007.yml
-        # Using Python 3.12 to match Dockerfile base image
-        spixPythonBase = pkgs.python312.withPackages (ps: with ps; [
-          # Core Python packages (from conda dependencies in yml)
-          pip
-          setuptools
-          wheel
-
-          # Scientific computing packages available in nixpkgs
-          numpy
-          scipy
-          pandas
-          matplotlib
-          seaborn
-          scikit-learn
-          scikit-image
-          h5py
-          pillow
-          pyyaml
-          requests
-          tqdm
-          joblib
-          networkx
-          patsy
-          statsmodels
-
-          # Bioinformatics/spatial analysis packages
-          anndata
-          # scanpy - installed via pip due to platform compatibility issues
-          # celltypist - may need pip
-          # squidpy - may need pip
-          # spatialdata - may need pip
-          # spatialdata-io - may need pip
-          geopandas
-          shapely
-          pyproj
-          rtree
-
-          # Image processing
-          imageio
-          # imagecodecs - may need pip
-          # tifffile - may need pip
-          # opencv4 - let opencv-python from pip take precedence
-
-          # Data handling
-          zarr
-          numcodecs
-          fsspec
-          # s3fs - may need pip
-          pyarrow
-          xarray
-          dask
-
-          # Visualization
-          # datashader - may need pip
-          # colorcet - may need pip
-          # holoviews - may need pip
-          # param - may need pip
-
-          # Jupyter/IPython
-          ipython
-          ipykernel
-          jupyter
-          notebook
-
-          # Other utilities
-          click
-          pygments
-          packaging
-          typing-extensions
-          pydantic
-
-          # Additional common packages
-          attrs
-          certifi
-          charset-normalizer
-          idna
-          urllib3
-          cloudpickle
-          decorator
-          exceptiongroup
-          importlib-metadata
-          more-itertools
-          six
-        ]);
-
-        # SPIX Python environment with SPIX package added
-        spixPython = spixPythonBase.withPackages (ps: [ spixPackage ]);
-        
-        # SPIX pip requirements (packages not available in nixpkgs)
+        # SPIX pip requirements
         spixPipRequirements = pkgs.writeText "spix-requirements.txt" ''
           aiobotocore==2.24.2
           aiohappyeyeballs==2.6.1
@@ -265,80 +132,150 @@
           papermill
           zipp==3.23.0
         '';
-        
-        # SPIX Python environment with pip packages pre-installed
-        spixPythonWithPip = pkgs.runCommand "spix-python-with-pip" {
-          buildInputs = [ spixPython ];
-        } ''
-          mkdir -p $out
-          # Copy Python environment
-          cp -r ${spixPython}/* $out/
-          chmod -R +w $out
-          
-          # Install pip packages into the Python environment
-          export HOME=$TMPDIR
-          ${spixPython}/bin/pip install --prefix $out -r ${spixPipRequirements}
-        '';
-        
-        # Note that stereopy requires python3.8 - outdated
-        stereopyPython = pkgsOld.python38.withPackages (ps: with ps; [
-          pip
-          setuptools
-          ipython  # From conda requirement
-        ]);
-        
-        # Stereopy pip requirements
+
+        # Helper function to create Python environment with SPIX from github + all pip deps
+        mkSpixEnv = pkgs': 
+          let
+            basePython = pkgs'.python312.withPackages (ps: with ps; [
+              pip
+              setuptools
+              wheel
+              numpy
+              scipy
+              pandas
+              matplotlib
+              seaborn
+              scikit-learn
+              scikit-image
+              h5py
+              pillow
+              pyyaml
+              requests
+              tqdm
+              joblib
+              networkx
+              patsy
+              statsmodels
+              anndata
+              geopandas
+              shapely
+              pyproj
+              rtree
+              imageio
+              zarr
+              numcodecs
+              fsspec
+              pyarrow
+              xarray
+              dask
+              ipython
+              ipykernel
+              jupyter
+              notebook
+              click
+              pygments
+              packaging
+              typing-extensions
+              pydantic
+              attrs
+              certifi
+              charset-normalizer
+              idna
+              urllib3
+              cloudpickle
+              decorator
+              exceptiongroup
+              importlib-metadata
+              more-itertools
+              six
+            ]);
+            pythonVersion = pkgs'.python312;
+          in
+            pkgs'.runCommand "spix-env" {
+              buildInputs = [ basePython pkgs'.python312 ];
+            } ''
+              export PYTHONPATH="${basePython}/${pythonVersion.sitePackages}:$PYTHONPATH"
+              export PATH="${basePython}/bin:$PATH"
+              export HOME=$TMPDIR
+              
+              mkdir -p $out/lib/${pythonVersion.libPrefix}/site-packages
+              
+              pip install --target $out/lib/${pythonVersion.libPrefix}/site-packages --no-deps -r ${spixPipRequirements}
+              
+              # Copy SPIX source to a writable location for building
+              cp -r ${spix} $TMPDIR/spix-src
+              chmod -R +w $TMPDIR/spix-src
+              pip install --target $out/lib/${pythonVersion.libPrefix}/site-packages --no-deps --no-build-isolation $TMPDIR/spix-src
+              
+              mkdir -p $out/bin
+              cp ${basePython}/bin/* $out/bin/
+            '';
+
+        spixEnv = mkSpixEnv pkgs;
+        spixEnvStable = mkSpixEnv pkgsStable;
+
+        # Stereopy environment
         stereopyPipRequirements = pkgs.writeText "stereopy-requirements.txt" ''
           stereopy
           anndata==0.11.4
           scanpy==1.11.4
         '';
-        
-        # Stereopy Python environment with pip packages pre-installed
+
+        stereopyPython = pkgsOld.python38.withPackages (ps: with ps; [
+          pip
+          setuptools
+          ipython
+        ]);
+
         stereopyPythonWithPip = pkgsOld.runCommand "stereopy-python-with-pip" {
-          buildInputs = [ stereopyPython ];
+          buildInputs = [ stereopyPython pkgsOld.python38 ];
         } ''
-          mkdir -p $out
-          cp -r ${stereopyPython}/* $out/
-          chmod -R +w $out
-          
+          export PYTHONPATH="${stereopyPython}/${pkgsOld.python38.sitePackages}:$PYTHONPATH"
+          export PATH="${stereopyPython}/bin:$PATH"
           export HOME=$TMPDIR
-          ${stereopyPython}/bin/pip install --prefix $out -r ${stereopyPipRequirements}
+          
+          mkdir -p $out/lib/${pkgsOld.python38.libPrefix}/site-packages
+          
+          pip install --target $out/lib/${pkgsOld.python38.libPrefix}/site-packages --no-deps -r ${stereopyPipRequirements}
+          
+          mkdir -p $out/bin
+          cp ${stereopyPython}/bin/* $out/bin/
         '';
-        
-        # VisiumHD Zarr Python environment
-        visiumhdZarrPython = pkgs.python312.withPackages (ps: with ps; [
+
+        # VisiumHD Zarr environment
+        visiumhdZarrPython = pkgsStable.python312.withPackages (ps: with ps; [
           pip
           setuptools
         ]);
-        
-        # VisiumHD Zarr pip requirements
-        visiumhdZarrPipRequirements = pkgs.writeText "visiumhd-zarr-requirements.txt" ''
+
+        visiumhdZarrPipRequirements = pkgsStable.writeText "visiumhd-zarr-requirements.txt" ''
           spatialdata-io
         '';
-        
-        # VisiumHD Zarr Python environment with pip packages pre-installed
-        visiumhdZarrPythonWithPip = pkgs.runCommand "visiumhd-zarr-python-with-pip" {
-          buildInputs = [ visiumhdZarrPython ];
+
+        visiumhdZarrPythonWithPip = pkgsStable.runCommand "visiumhd-zarr-python-with-pip" {
+          buildInputs = [ visiumhdZarrPython pkgsStable.python312 ];
         } ''
-          mkdir -p $out
-          cp -r ${visiumhdZarrPython}/* $out/
-          chmod -R +w $out
-          
+          export PYTHONPATH="${visiumhdZarrPython}/${pkgsStable.python312.sitePackages}:$PYTHONPATH"
+          export PATH="${visiumhdZarrPython}/bin:$PATH"
           export HOME=$TMPDIR
-          ${visiumhdZarrPython}/bin/pip install --prefix $out -r ${visiumhdZarrPipRequirements}
+          
+          mkdir -p $out/lib/${pkgsStable.python312.libPrefix}/site-packages
+          
+          pip install --target $out/lib/${pkgsStable.python312.libPrefix}/site-packages --no-deps -r ${visiumhdZarrPipRequirements}
+          
+          mkdir -p $out/bin
+          cp ${visiumhdZarrPython}/bin/* $out/bin/
         '';
 
         # ==============================================================================
         # OCI IMAGES
         # ==============================================================================
 
-        # SPIX OCI Image - using Python environment with pip packages pre-installed
         spixImage = pkgsStable.dockerTools.buildLayeredImage {
           name = "spix";
           tag = "v0.0.1";
           contents = [
-            spixPythonWithPip
+            spixEnvStable
             pkgsStable.bash
             pkgsStable.coreutils
             pkgsStable.findutils
@@ -347,12 +284,10 @@
             pkgsStable.git
             pkgsStable.curl
             pkgsStable.wget
-            # Build tools (needed for some Python packages)
             pkgsStable.gcc
             pkgsStable.gnumake
             pkgsStable.binutils
             pkgsStable.pkg-config
-            # System libraries
             pkgsStable.zlib
             pkgsStable.bzip2
             pkgsStable.openssl
@@ -361,17 +296,16 @@
             pkgsStable.readline
           ];
           config = {
-            Cmd = [ "${spixPythonWithPip}/bin/python3" ];
+            Cmd = [ "${spixEnvStable}/bin/python3" ];
             WorkingDir = "/";
             Env = [
-              "PATH=${pkgsStable.lib.makeBinPath [ spixPythonWithPip pkgsStable.bash pkgsStable.coreutils ]}"
+              "PATH=${pkgsStable.lib.makeBinPath [ spixEnvStable pkgsStable.bash pkgsStable.coreutils ]}"
               "PYTHONUNBUFFERED=1"
               "LD_LIBRARY_PATH=${pkgsStable.lib.makeLibraryPath [ pkgsStable.zlib pkgsStable.bzip2 pkgsStable.openssl pkgsStable.libffi pkgsStable.ncurses ]}"
             ];
           };
         };
-        
-        # Stereopy OCI Image
+
         stereopyImage = pkgsOld.dockerTools.buildLayeredImage {
           name = "stereopy";
           tag = "v0.0.1";
@@ -385,23 +319,20 @@
             pkgsOld.git
             pkgsOld.curl
             pkgsOld.wget
-            # Build tools
             pkgsOld.gcc
             pkgsOld.gnumake
             pkgsOld.binutils
             pkgsOld.pkg-config
-            # System libraries (matching conda environment)
             pkgsOld.zlib
             pkgsOld.bzip2
             pkgsOld.openssl
             pkgsOld.libffi
             pkgsOld.ncurses
             pkgsOld.readline
-            # Additional conda packages: libstdcxx-ng, libgcc-ng, icu, sqlite
-            pkgsOld.stdenv.cc.cc.lib  # libstdcxx-ng
-            pkgsOld.gcc.cc.lib        # libgcc-ng
-            pkgsOld.icu                # icu
-            pkgsOld.sqlite             # sqlite
+            pkgsOld.stdenv.cc.cc.lib
+            pkgsOld.gcc.cc.lib
+            pkgsOld.icu
+            pkgsOld.sqlite
           ];
           config = {
             Cmd = [ "${stereopyPythonWithPip}/bin/python3" ];
@@ -413,8 +344,7 @@
             ];
           };
         };
-        
-        # VisiumHD Zarr OCI Image
+
         visiumhdZarrImage = pkgsStable.dockerTools.buildLayeredImage {
           name = "visiumhd-zarr";
           tag = "v0.0.1";
@@ -428,12 +358,10 @@
             pkgsStable.git
             pkgsStable.curl
             pkgsStable.wget
-            # Build tools
             pkgsStable.gcc
             pkgsStable.gnumake
             pkgsStable.binutils
             pkgsStable.pkg-config
-            # System libraries
             pkgsStable.zlib
             pkgsStable.bzip2
             pkgsStable.openssl
@@ -456,18 +384,14 @@
         # HELPER FUNCTIONS AND APPS
         # ==============================================================================
 
-        # Helper function to create a script that copies image to target directory
         copyImageToDir = name: targetDir: pkgs.writeShellApplication {
           name = "copy-${name}-image";
           runtimeInputs = [ pkgs.coreutils pkgs.nix ];
           text = ''
-            # Default target directory if not specified
             TARGET_DIR="''${1:-${targetDir}}"
             
-            # Create target directory if it doesn't exist
             mkdir -p "$TARGET_DIR"
             
-            # Build the image
             echo "Building ${name} image..."
             TEMP_RESULT=$(mktemp -d)
             nix build .#${name}-image --out-link "$TEMP_RESULT/result"
@@ -477,11 +401,9 @@
               exit 1
             fi
             
-            # Copy image to target directory
             IMAGE_FILE="${name}-v0.0.1.tar"
             cp "$TEMP_RESULT/result" "$TARGET_DIR/$IMAGE_FILE"
             
-            # Clean up temp directory
             rm -rf "$TEMP_RESULT"
             
             echo "Image copied to: $TARGET_DIR/$IMAGE_FILE"
@@ -490,39 +412,31 @@
           '';
         };
 
-        # ==============================================================================
-        # FLAKE OUTPUTS
-        # ==============================================================================
-
       in {
-        # Development shell (uses unstable nixpkgs)
         devShells.default = pkgs.mkShell {
           buildInputs = [
-            spixPackage
-            spixPython
+            spixEnv
             pkgs.git
             pkgs.nextflow
           ];
 
           shellHook = ''
+            export PYTHONPATH="${spixEnv}/lib/${pkgs.python312.libPrefix}/site-packages:$PYTHONPATH"
+            export PATH="${spixEnv}/bin:$PATH"
             echo "SPIX Analysis Shell Activated"
             echo "SPIX package available: $(python3 -c 'import SPIX; print(SPIX.__file__)' 2>/dev/null || echo 'Not found')"
           '';
         };
-        
-        # OCI Images
+
         packages = {
           spix-image = spixImage;
           stereopy-image = stereopyImage;
           visiumhd-zarr-image = visiumhdZarrImage;
-          
-          # Also expose Python environments for direct use (with pip packages)
-          spix-python = spixPythonWithPip;
+          spix-python = spixEnv;
           stereopy-python = stereopyPythonWithPip;
           visiumhd-zarr-python = visiumhdZarrPythonWithPip;
         };
-        
-        # Apps to copy images to a target directory
+
         apps = {
           copy-spix-image = {
             type = "app";
@@ -537,8 +451,7 @@
             program = "${copyImageToDir "visiumhd-zarr" "./container_cache"}/bin/copy-visiumhd-zarr-image";
           };
         };
-        
-        # Default package
+
         defaultPackage = spixImage;
       }
     );
