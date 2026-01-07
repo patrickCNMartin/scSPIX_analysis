@@ -1,0 +1,13 @@
+name: stereopy
+channels:
+  - conda-forge
+  - bioconda
+  - fastai
+  - defaults
+  - pip
+dependencies:
+  - python
+  - anndata
+  - pip:
+    - stereopy
+    - scanpy

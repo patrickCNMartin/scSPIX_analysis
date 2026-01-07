@@ -5,7 +5,7 @@ work/
 
 # Never load local data if present
 data/
-
+container_cache/
 # OS
 .DS_Store
 
