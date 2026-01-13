@@ -239,6 +239,7 @@
         devShells.default = pkgs.mkShell {
           buildInputs = [
             spixEnv
+            pkgs.uv
             pkgs.git
             pkgs.nextflow
           ];
