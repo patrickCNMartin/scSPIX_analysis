@@ -80,6 +80,42 @@
             '';
           };
 
+        # Helper function to create a conda-based Python environment
+        mkCondaPythonEnv = { pythonVersion, projectName, condaPackages, nixpkgs ? pkgs }:
+          nixpkgs.stdenv.mkDerivation {
+            name = "${projectName}-env";
+            src = ./.;
+
+            buildInputs = [
+              nixpkgs.miniconda3
+              nixpkgs.bash
+            ];
+
+            phases = [ "unpackPhase" "buildPhase" "installPhase" ];
+
+            buildPhase = ''
+              export HOME=$(mktemp -d)
+              export PATH="${nixpkgs.miniconda3}/bin:$PATH"
+              
+              # Initialize conda
+              eval "$(${nixpkgs.miniconda3}/bin/conda shell.bash hook)"
+              
+              # Create conda environment
+              conda create -y -p $HOME/conda-env -c conda-forge \
+                python=${pythonVersion} \
+                ${nixpkgs.lib.concatStringsSep " \\\n  " condaPackages}
+              
+              # Activate and install stereopy
+              conda activate $HOME/conda-env
+              pip install stereopy
+            '';
+
+            installPhase = ''
+              mkdir -p $out
+              cp -r $HOME/conda-env/* $out/
+            '';
+          };
+
         # Environment definitions
         spixEnv = mkUvPythonEnv {
           pythonPkgs = pkgs.python312;
@@ -93,11 +129,19 @@
           nixpkgs = pkgsStable;
         };
 
-        stereopyEnv = mkPipPythonEnv {
-          pythonPkgs = pkgsOld.python38;
+        stereopyEnv = mkCondaPythonEnv {
+          pythonVersion = "3.8";
           projectName = "stereopy";
-          requirementsFile = "requirements.txt";
-          nixpkgs = pkgsOld;
+          condaPackages = [
+            "ipython"
+            "libstdcxx-ng"
+            "libgcc-ng"
+            "icu"
+            "sqlite"
+            "anndata"
+            "scanpy"
+          ];
+          nixpkgs = pkgsStable;
         };
 
         visiumhdZarrEnv = mkUvPythonEnv {
@@ -147,42 +191,27 @@
           };
         };
 
-        stereopyImage = pkgsOld.dockerTools.buildLayeredImage {
+        stereopyImage = pkgsStable.dockerTools.buildLayeredImage {
           name = "stereopy";
           tag = "v0.0.1";
           contents = [
             stereopyEnv
-            pkgsOld.python38
-            pkgsOld.bash
-            pkgsOld.coreutils
-            pkgsOld.findutils
-            pkgsOld.gnugrep
-            pkgsOld.gnused
-            pkgsOld.git
-            pkgsOld.curl
-            pkgsOld.wget
-            pkgsOld.gcc
-            pkgsOld.gnumake
-            pkgsOld.binutils
-            pkgsOld.pkg-config
-            pkgsOld.zlib
-            pkgsOld.bzip2
-            pkgsOld.openssl
-            pkgsOld.libffi
-            pkgsOld.ncurses
-            pkgsOld.readline
-            pkgsOld.stdenv.cc.cc.lib
-            pkgsOld.gcc.cc.lib
-            pkgsOld.icu
-            pkgsOld.sqlite
+            pkgsStable.bash
+            pkgsStable.coreutils
+            pkgsStable.findutils
+            pkgsStable.gnugrep
+            pkgsStable.gnused
+            pkgsStable.git
+            pkgsStable.curl
+            pkgsStable.wget
           ];
           config = {
-            Cmd = [ "${pkgsOld.python38}/bin/python3" ];
+            Cmd = [ "${stereopyEnv}/bin/python3" ];
             WorkingDir = "/";
             Env = [
-              "PATH=${stereopyEnv}/bin:${pkgsOld.lib.makeBinPath [ pkgsOld.bash pkgsOld.coreutils ]}"
+              "PATH=${stereopyEnv}/bin:${pkgsStable.lib.makeBinPath [ pkgsStable.bash pkgsStable.coreutils ]}"
               "PYTHONUNBUFFERED=1"
-              "LD_LIBRARY_PATH=${pkgsOld.lib.makeLibraryPath [ pkgsOld.zlib pkgsOld.bzip2 pkgsOld.openssl pkgsOld.libffi pkgsOld.ncurses pkgsOld.stdenv.cc.cc.lib pkgsOld.gcc.cc.lib pkgsOld.icu pkgsOld.sqlite ]}"
+              "LD_LIBRARY_PATH=${stereopyEnv}/lib:''${LD_LIBRARY_PATH:-}"
             ];
           };
         };
@@ -281,32 +310,36 @@
           '';
         };
 
-        devShells.stereopy = pkgsOld.mkShell {
+        devShells.stereopy = pkgsStable.mkShell {
           buildInputs = [
-            pkgsOld.python38
-            pkgsOld.pip
-            pkgsOld.git
+            pkgsStable.miniconda3
+            pkgsStable.git
           ];
 
           shellHook = ''
             export FLAKE_DIR="''${PWD}"
             
-            echo "Setting up stereopy environment with pip..."
-            if [ -d "$FLAKE_DIR/uv-projects/stereopy" ]; then
-              cd "$FLAKE_DIR/uv-projects/stereopy"
-              ${pkgsOld.python38}/bin/python -m venv .venv
-              source .venv/bin/activate
-              if [ -f "requirements.txt" ]; then
-                pip install -r requirements.txt
-              else
-                pip install -e .
-              fi
-              cd "$FLAKE_DIR"
+            echo "Setting up stereopy environment with conda..."
+            eval "$(${pkgsStable.miniconda3}/bin/conda shell.bash hook)"
+            
+            if ! conda env list | grep -q stereo_stable; then
+              conda create -y -n stereo_stable -c conda-forge \
+                python=3.8 \
+                ipython \
+                libstdcxx-ng \
+                libgcc-ng \
+                icu \
+                sqlite
+              
+              conda activate stereo_stable
+              pip install stereopy
             else
-              echo "Warning: uv-projects/stereopy directory not found at $FLAKE_DIR/uv-projects/stereopy"
+              conda activate stereo_stable
             fi
             
-            echo "Stereopy Shell Activated (Python 3.8)"
+            export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:''${LD_LIBRARY_PATH:-}"
+            
+            echo "Stereopy Shell Activated (Python 3.8 with Conda)"
           '';
         };
 
