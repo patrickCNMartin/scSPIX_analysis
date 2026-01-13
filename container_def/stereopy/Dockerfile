@@ -1,33 +1,34 @@
-# Use a slim bullseye image for better compatibility with older Python 3.8
-FROM python:3.12-slim-bullseye
+# Using Python 3.8 on Bullseye (Debian 11) for compatibility
+FROM python:3.8-slim-bullseye
 
-# Install uv directly from the official binary
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies required for stereopy's C extensions
+# Install system dependencies
+# Added pkg-config and libxml2-dev which are often needed by bio-informatics stacks
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libstdc++6 \
+    libsqlite3-dev \
+    libicu-dev \
+    libxml2-dev \
+    pkg-config \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy your pyproject.toml
-COPY pyproject.toml .
+# Install Python packages directly
+# We group them to allow pip to resolve dependencies (like numpy versions) together
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir \
+    ipython \
+    anndata \
+    scanpy \
+    stereopy
 
-# 1. Create the environment and sync dependencies
-# 2. uv will automatically download and use Python 3.8 as defined in pyproject.toml
-# 3. We use --frozen to ensure the lockfile is respected (if you have one)
-RUN uv venv --python 3.8 && \
-    uv pip install .
-
-# Ensure the virtualenv is on the PATH
-ENV PATH="/app/.venv/bin:$PATH"
-
-# Stereopy often needs to know where system libs are
-ENV LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"
 
 # Default command
-CMD ["python"]
+CMD ["ipython"]

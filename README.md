@@ -1,6 +1,6 @@
 # scSPIX Analysis
 
-Reproducible analysis pipeline for the scSPIX package and paper. This project provides a Nextflow-based workflow for processing and analyzing spatial transcriptomics data, with containerized environments built using Nix and uv for maximum reproducibility.
+Reproducible analysis pipeline for the scSPIX package and paper. This project provides a Nextflow-based workflow for processing and analyzing spatial transcriptomics data, with containerized environments built using Docker and managed with uv for Python dependencies.
 
 ## Table of Contents
 
@@ -19,10 +19,10 @@ If you're new to this project and want to re-run the analysis pipeline:
 
 1. **Install Nix** (see [Installation](#installation) below)
 2. **Set up development environment**: `nix develop`
-3. **Build container images**: `nix run .#copy-spix-image`
+3. **Build container images**: `docker build -t spix container_def/spix/`
 4. **Run the pipeline**: `nextflow run main.nf`
 
-That's it! The Nix flake handles all dependencies automatically.
+That's it! Nix provides the development environment, Docker builds the containers.
 
 ## Project Structure
 
@@ -37,24 +37,20 @@ scSPIX_analysis/
 │   ├── spix-v0.0.1.tar
 │   ├── stereopy-v0.0.1.tar
 │   └── visiumhd-zarr-v0.0.1.tar
-├── container_def/                # Legacy container definitions (for reference)
-│   ├── spix/                     # SPIX analysis container
-│   │   ├── Dockerfile
+├── container_def/                # Container definitions and Python environments
+│   ├── spix/                     # SPIX analysis environment
+│   │   ├── Dockerfile            # Docker image definition
+│   │   ├── pyproject.toml        # Python dependencies (uv)
 │   │   └── spix.def              # Singularity definition
-│   ├── stereopy/                 # Stereopy container
+│   ├── stereopy/                 # Stereopy environment
 │   │   ├── Dockerfile
+│   │   ├── pyproject.toml
 │   │   └── stereopy.def
-│   └── visiumhd_zarr/            # VisiumHD Zarr container
+│   └── visiumhd_zarr/            # VisiumHD Zarr environment
 │       ├── Dockerfile
+│       ├── pyproject.toml
 │       └── visiumhd_zarr.def
 ├── data/                         # Input data directory
-├── uv-projects/                  # Python project definitions (uv/pyproject.toml)
-│   ├── spix/                     # SPIX analysis environment
-│   │   └── pyproject.toml
-│   ├── stereopy/                 # Stereopy environment
-│   │   └── pyproject.toml
-│   └── visiumhd-zarr/            # VisiumHD Zarr environment
-│       └── pyproject.toml
 ├── lib/                          # Nextflow library functions
 │   └── utils.nf
 ├── workflows/                    # Nextflow workflow definitions
@@ -144,87 +140,70 @@ Now every time you `cd` into the project directory, the environment activates au
 
 ## Building Container Images
 
-This project uses Nix to build container images directly from Python environments defined with uv. No Conda or Dockerfiles needed!
-
-### Why Use Nix for Containers?
-
-- **Reproducible**: Same image every time, regardless of system
-- **Fast**: Incremental builds, only rebuilds what changed
-- **No Docker daemon**: Builds directly to tar files
-- **Small**: Only includes what's actually needed
+Container images are built using Docker from the `container_def/` directory. Python dependencies are managed with uv for faster, more reliable builds.
 
 ### Available Images
 
-- **spix-image**: Complete SPIX analysis environment (134+ Python packages)
-- **stereopy-image**: Stereopy analysis tools
-- **visiumhd-zarr-image**: VisiumHD Zarr data processing
+- **spix**: Complete SPIX analysis environment (130+ Python packages)
+- **stereopy**: Stereopy analysis tools
+- **visiumhd-zarr**: VisiumHD Zarr data processing
 
-### Quick Build (Recommended)
-
-Build and save images to `container_cache/` automatically:
+### Building Images with Docker
 
 ```bash
-# Build all three images (run in development environment)
-nix run .#copy-spix-image
-nix run .#copy-stereopy-image
-nix run .#copy-visiumhd-zarr-image
+# Build SPIX image
+docker build -t spix container_def/spix/
+
+# Build Stereopy image
+docker build -t stereopy container_def/stereopy/
+
+# Build VisiumHD Zarr image
+docker build -t visiumhd-zarr container_def/visiumhd_zarr/
 ```
 
-**What this does:**
-- Downloads all dependencies
-- Builds complete Python environments
-- Creates OCI-compliant container images
-- Saves as `.tar` files in `container_cache/`
+### What Happens During Build
 
-### Loading Images
+Each Dockerfile:
+1. Uses Python 3.12 base image
+2. Installs uv package manager
+3. Copies `pyproject.toml` with all dependencies
+4. Runs `uv sync` to install Python packages
+5. Sets up the container for Nextflow execution
 
-After building, load into Docker or Podman:
+### Saving Images (Optional)
+
+Save built images for sharing or backup:
 
 ```bash
-# Load SPIX image
-docker load -i container_cache/spix-v0.0.1.tar
-
-# Tag for convenience
-docker tag spix:v0.0.1 spix:latest
-
-# Verify
-docker images | grep spix
+# Save images to container_cache/
+docker save spix > container_cache/spix.tar
+docker save stereopy > container_cache/stereopy.tar
+docker save visiumhd-zarr > container_cache/visiumhd-zarr.tar
 ```
 
-### Advanced Usage
+### Loading Saved Images
 
-**Build to custom location:**
 ```bash
-nix run .#copy-spix-image /my/custom/directory
-```
-
-**Build image directly (for inspection):**
-```bash
-nix build .#spix-image
-ls -la result  # Shows the .tar file
-```
-
-**Access Python environments without containers:**
-```bash
-# Build Python environment only
-nix build .#spix-python
-
-# Use Python directly
-./result/bin/python3 -c "import scanpy; print('Ready!')"
+# Load from saved tar files
+docker load -i container_cache/spix.tar
+docker load -i container_cache/stereopy.tar
+docker load -i container_cache/visiumhd-zarr.tar
 ```
 
 ## Development Environment
 
-### What the Development Environment Provides
+### What Nix Provides
+
+Nix manages the **system-level dependencies** and development tools. Python packages are managed separately with uv.
 
 When you run `nix develop`, you get:
-
-- **Python 3.12** with uv package manager
+- **Python 3.12** interpreter
+- **uv** package manager (for Python dependencies)
 - **Nextflow** for running analysis pipelines
 - **Git** for version control
-- **Complete SPIX environment** with all dependencies
+- **System libraries** needed for scientific computing
 
-### Using the Environment
+### Using the Development Environment
 
 ```bash
 # Enter development environment
@@ -237,29 +216,42 @@ nix develop
 # - Run analysis scripts from bin/
 ```
 
-### Python Package Management
+### Setting Up Python Environment with uv
 
-The environment uses **uv** for fast, reliable Python package management:
-
-```bash
-# In development environment
-cd uv-projects/spix
-uv sync  # Install/update dependencies
-source .venv/bin/activate  # Use the environment
-python -c "import scanpy; print('SPIX ready!')"
-```
-
-### Direct Python Environment Access
-
-Build Python environments without containers:
+Once in the Nix environment, set up Python dependencies:
 
 ```bash
-# Build SPIX Python environment
-nix build .#spix-python
+# Navigate to the SPIX environment definition
+cd container_def/spix
 
-# Use Python directly
-./result/bin/python3 script.py
+# Install Python dependencies with uv (fast!)
+uv sync
+
+# Activate the virtual environment
+source .venv/bin/activate
+
+# Test the environment
+python -c "import scanpy, squidpy; print('SPIX environment ready!')"
 ```
+
+**For automatic activation (optional):**
+
+```bash
+# Install direnv
+# macOS: brew install direnv
+# Linux: your package manager
+
+# Set up automatic Nix environment activation
+echo "use flake" > .envrc
+direnv allow
+```
+
+### Python Environment Management
+
+- **uv sync**: Install/update all Python dependencies from `pyproject.toml`
+- **source .venv/bin/activate**: Activate the virtual environment
+- **uv add package**: Add new dependencies to `pyproject.toml`
+- **uv remove package**: Remove dependencies
 
 ## Running the Pipeline
 
@@ -303,7 +295,7 @@ Results are saved to the configured output directory with organized subdirectori
 
 ## Container Images
 
-All images are built from `pyproject.toml` files using uv + Nix for reproducible environments.
+All images are built from `pyproject.toml` files using Docker with uv for Python dependency management.
 
 ### SPIX Image (`spix-image`)
 
@@ -366,13 +358,24 @@ sudo systemctl restart nix-daemon  # Linux
 
 **"permission denied"**
 ```bash
-# Ensure you can write to container_cache/
-mkdir -p container_cache
+# Ensure Docker can write to current directory
+# No special permissions needed for Docker builds
 ```
 
-**Out of disk space**
-- Container builds need temporary space
-- Clean up with: `nix-collect-garbage`
+**Docker build fails**
+```bash
+# Check Docker is running
+docker info
+
+# Clean up failed builds
+docker system prune
+```
+
+**uv sync fails in Docker**
+```bash
+# Check network connectivity in container
+# uv may need internet access for package downloads
+```
 
 ### Pipeline Issues
 
@@ -388,9 +391,9 @@ mkdir -p container_cache
 
 To modify the Python environments:
 
-1. Edit `uv-projects/*/pyproject.toml` files
+1. Edit `container_def/*/pyproject.toml` files
 2. Add/remove dependencies as needed
-3. Test with: `nix develop` and `uv sync`
-4. Rebuild containers: `nix run .#copy-*-image`
+3. Test with: `nix develop` then `cd container_def/spix && uv sync`
+4. Rebuild containers: `docker build -t spix container_def/spix/`
 
-The Nix flake automatically picks up changes to `pyproject.toml` files.
+The `pyproject.toml` files define all Python dependencies managed by uv.

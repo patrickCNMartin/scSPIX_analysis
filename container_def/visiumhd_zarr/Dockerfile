@@ -1,43 +1,30 @@
 # Use a slim Python image
 FROM python:3.12-slim
 
-# Install uv from the official binary
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+# Set environment variables to optimize Python behavior
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
 # Set working directory
 WORKDIR /app
 
-# Enable bytecode compilation for performance and set the venv path
-ENV UV_COMPILE_BYTECODE=1
-ENV UV_PROJECT_ENVIRONMENT=/opt/venv
-
-# 1. Install minimal system build tools
-# visiumhd/zarr often requires build-essential for C-extensions
+# 1. Install system dependencies
+# build-essential is for C-extensions; git for potential github-hosted dependencies
+# libgl1 and libglib2.0-0 are often needed for spatial/image libraries
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     git \
+    libgl1 \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Copy the pyproject.toml
-# If you are still using the .yml file, you should migrate those 
-# dependencies into a pyproject.toml in this directory.
-COPY pyproject.toml .
-# COPY uv.lock . # Uncomment if you have a lockfile
+# 2. Upgrade pip and install the package directly
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir spatialdata-io
 
-# 3. Install dependencies
-# This creates the virtual environment in /opt/venv
-RUN uv sync --no-install-project --no-dev
-
-# 4. Copy the rest of your application
+# 3. Copy your application scripts
 COPY . .
 
-# 5. Final sync to install the local project
-RUN uv sync --no-dev
-
-# Place the virtual environment's bin on the PATH
-ENV PATH="/opt/venv/bin:$PATH"
-
 # Entrypoint setup
-# Unlike Conda, we don't need "uv run" if we've updated the PATH
 ENTRYPOINT ["python"]
 CMD ["--version"]
