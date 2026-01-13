@@ -15,9 +15,11 @@
       let
         pkgs = import nixpkgs { inherit system; };
         pkgsStable = import nixpkgs-stable { inherit system; };
-        pkgsOld = import nixpkgs-22-11 { inherit system; };
+        pkgsOld = import nixpkgs-22-11 { 
+          inherit system; 
+          config.allowUnsupportedSystem = true;
+        };
 
-        # Helper function to create a Python environment using nix + uv
         mkUvPythonEnv = { pythonPkgs, projectName, nixpkgs ? pkgs }:
           nixpkgs.stdenv.mkDerivation {
             name = "${projectName}-env";
@@ -48,75 +50,6 @@
             '';
           };
 
-        # Helper function to create a Python environment using pip (for legacy packages)
-        mkPipPythonEnv = { pythonPkgs, projectName, requirementsFile ? "requirements.txt", nixpkgs ? pkgs }:
-          nixpkgs.stdenv.mkDerivation {
-            name = "${projectName}-env";
-            src = ./.;
-
-            buildInputs = [
-              pythonPkgs
-              nixpkgs.pip
-            ];
-
-            phases = [ "unpackPhase" "buildPhase" "installPhase" ];
-
-            buildPhase = ''
-              export HOME=$(mktemp -d)
-              cd uv-projects/${projectName}
-              ${pythonPkgs}/bin/python -m venv $HOME/.venv
-              export PATH="$HOME/.venv/bin:$PATH"
-              if [ -f "${requirementsFile}" ]; then
-                pip install -r ${requirementsFile}
-              else
-                pip install -e .
-              fi
-              cd - > /dev/null
-            '';
-
-            installPhase = ''
-              mkdir -p $out
-              cp -r $HOME/.venv/* $out/
-            '';
-          };
-
-        # Helper function to create a conda-based Python environment
-        mkCondaPythonEnv = { pythonVersion, projectName, condaPackages, nixpkgs ? pkgs }:
-          nixpkgs.stdenv.mkDerivation {
-            name = "${projectName}-env";
-            src = ./.;
-
-            buildInputs = [
-              nixpkgs.miniconda3
-              nixpkgs.bash
-            ];
-
-            phases = [ "unpackPhase" "buildPhase" "installPhase" ];
-
-            buildPhase = ''
-              export HOME=$(mktemp -d)
-              export PATH="${nixpkgs.miniconda3}/bin:$PATH"
-              
-              # Initialize conda
-              eval "$(${nixpkgs.miniconda3}/bin/conda shell.bash hook)"
-              
-              # Create conda environment
-              conda create -y -p $HOME/conda-env -c conda-forge \
-                python=${pythonVersion} \
-                ${nixpkgs.lib.concatStringsSep " \\\n  " condaPackages}
-              
-              # Activate and install stereopy
-              conda activate $HOME/conda-env
-              pip install stereopy
-            '';
-
-            installPhase = ''
-              mkdir -p $out
-              cp -r $HOME/conda-env/* $out/
-            '';
-          };
-
-        # Environment definitions
         spixEnv = mkUvPythonEnv {
           pythonPkgs = pkgs.python312;
           projectName = "spix";
@@ -129,25 +62,56 @@
           nixpkgs = pkgsStable;
         };
 
-        stereopyEnv = mkCondaPythonEnv {
-          pythonVersion = "3.8";
-          projectName = "stereopy";
-          condaPackages = [
-            "ipython"
-            "libstdcxx-ng"
-            "libgcc-ng"
-            "icu"
-            "sqlite"
-            "anndata"
-            "scanpy"
-          ];
-          nixpkgs = pkgsStable;
-        };
-
         visiumhdZarrEnv = mkUvPythonEnv {
           pythonPkgs = pkgsStable.python312;
           projectName = "visiumhd-zarr";
           nixpkgs = pkgsStable;
+        };
+
+        stereopyCondaEnv = pkgsOld.stdenv.mkDerivation {
+          name = "stereopy-conda-env";
+          
+          buildInputs = [
+            pkgsOld.wget
+            pkgsOld.bash
+          ];
+          
+          phases = [ "buildPhase" "installPhase" ];
+          
+          buildPhase = ''
+            export HOME=$(mktemp -d)
+            mkdir -p /tmp
+            cd /tmp
+            
+            # Download and install miniconda
+            wget -q https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+            bash miniconda.sh -b -p $HOME/conda
+            rm miniconda.sh
+            
+            # Configure conda
+            $HOME/conda/bin/conda config --system --prepend channels conda-forge
+            $HOME/conda/bin/conda update -n base conda -y
+            
+            # Create stereopy environment
+            $HOME/conda/bin/conda create -y -n stereopy -c conda-forge \
+              python=3.8 \
+              ipython \
+              libstdcxx-ng \
+              libgcc-ng \
+              icu \
+              sqlite
+            
+            # Install stereopy packages
+            $HOME/conda/bin/conda run -n stereopy pip install stereopy anndata scanpy
+            
+            # Clean conda cache
+            $HOME/conda/bin/conda clean --all --yes
+          '';
+          
+          installPhase = ''
+            mkdir -p $out
+            cp -r $HOME/conda $out/
+          '';
         };
 
         # ==============================================================================
@@ -191,27 +155,24 @@
           };
         };
 
-        stereopyImage = pkgsStable.dockerTools.buildLayeredImage {
+        stereopyImage = pkgsOld.dockerTools.buildLayeredImage {
           name = "stereopy";
           tag = "v0.0.1";
+          
           contents = [
-            stereopyEnv
-            pkgsStable.bash
-            pkgsStable.coreutils
-            pkgsStable.findutils
-            pkgsStable.gnugrep
-            pkgsStable.gnused
-            pkgsStable.git
-            pkgsStable.curl
-            pkgsStable.wget
+            stereopyCondaEnv
+            pkgsOld.bash
+            pkgsOld.coreutils
+            pkgsOld.git
+            pkgsOld.curl
           ];
+
           config = {
-            Cmd = [ "${stereopyEnv}/bin/python3" ];
-            WorkingDir = "/";
+            Entrypoint = [ "${stereopyCondaEnv}/conda/bin/conda" "run" "-n" "stereopy" "--no-capture-output" ];
+            Cmd = [ "/bin/bash" ];
             Env = [
-              "PATH=${stereopyEnv}/bin:${pkgsStable.lib.makeBinPath [ pkgsStable.bash pkgsStable.coreutils ]}"
+              "PATH=${stereopyCondaEnv}/conda/envs/stereopy/bin:${stereopyCondaEnv}/conda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
               "PYTHONUNBUFFERED=1"
-              "LD_LIBRARY_PATH=${stereopyEnv}/lib:''${LD_LIBRARY_PATH:-}"
             ];
           };
         };
@@ -251,10 +212,6 @@
             ];
           };
         };
-
-        # ==============================================================================
-        # HELPER FUNCTIONS AND APPS
-        # ==============================================================================
 
         copyImageToDir = name: targetDir: pkgs.writeShellApplication {
           name = "copy-${name}-image";
@@ -310,20 +267,34 @@
           '';
         };
 
-        devShells.stereopy = pkgsStable.mkShell {
+        devShells.stereopy = pkgsOld.mkShell {
           buildInputs = [
-            pkgsStable.miniconda3
-            pkgsStable.git
+            pkgsOld.wget
+            pkgsOld.bash
           ];
 
           shellHook = ''
             export FLAKE_DIR="''${PWD}"
             
             echo "Setting up stereopy environment with conda..."
-            eval "$(${pkgsStable.miniconda3}/bin/conda shell.bash hook)"
             
+            export HOME=$(mktemp -d)
+            mkdir -p /tmp
+            cd /tmp
+            
+            # Download and install miniconda if not exists
+            if [ ! -d "$HOME/conda" ]; then
+              wget -q https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+              bash miniconda.sh -b -p $HOME/conda
+              rm miniconda.sh
+            fi
+            
+            export PATH="$HOME/conda/bin:$PATH"
+            
+            # Create environment if not exists
             if ! conda env list | grep -q stereo_stable; then
-              conda create -y -n stereo_stable -c conda-forge \
+              $HOME/conda/bin/conda config --system --prepend channels conda-forge
+              $HOME/conda/bin/conda create -y -n stereo_stable -c conda-forge \
                 python=3.8 \
                 ipython \
                 libstdcxx-ng \
@@ -332,7 +303,7 @@
                 sqlite
               
               conda activate stereo_stable
-              pip install stereopy
+              pip install stereopy anndata scanpy
             else
               conda activate stereo_stable
             fi
@@ -348,7 +319,6 @@
           stereopy-image = stereopyImage;
           visiumhd-zarr-image = visiumhdZarrImage;
           spix-python = spixEnv;
-          stereopy-python = stereopyEnv;
           visiumhd-zarr-python = visiumhdZarrEnv;
         };
 
