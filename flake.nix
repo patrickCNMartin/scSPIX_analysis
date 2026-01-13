@@ -48,6 +48,38 @@
             '';
           };
 
+        # Helper function to create a Python environment using pip (for legacy packages)
+        mkPipPythonEnv = { pythonPkgs, projectName, requirementsFile ? "requirements.txt", nixpkgs ? pkgs }:
+          nixpkgs.stdenv.mkDerivation {
+            name = "${projectName}-env";
+            src = ./.;
+
+            buildInputs = [
+              pythonPkgs
+              nixpkgs.pip
+            ];
+
+            phases = [ "unpackPhase" "buildPhase" "installPhase" ];
+
+            buildPhase = ''
+              export HOME=$(mktemp -d)
+              cd uv-projects/${projectName}
+              ${pythonPkgs}/bin/python -m venv $HOME/.venv
+              export PATH="$HOME/.venv/bin:$PATH"
+              if [ -f "${requirementsFile}" ]; then
+                pip install -r ${requirementsFile}
+              else
+                pip install -e .
+              fi
+              cd - > /dev/null
+            '';
+
+            installPhase = ''
+              mkdir -p $out
+              cp -r $HOME/.venv/* $out/
+            '';
+          };
+
         # Environment definitions
         spixEnv = mkUvPythonEnv {
           pythonPkgs = pkgs.python312;
@@ -61,9 +93,10 @@
           nixpkgs = pkgsStable;
         };
 
-        stereopyEnv = mkUvPythonEnv {
+        stereopyEnv = mkPipPythonEnv {
           pythonPkgs = pkgsOld.python38;
           projectName = "stereopy";
+          requirementsFile = "requirements.txt";
           nixpkgs = pkgsOld;
         };
 
@@ -245,6 +278,35 @@
             fi
             
             echo "SPIX Analysis Shell Activated"
+          '';
+        };
+
+        devShells.stereopy = pkgsOld.mkShell {
+          buildInputs = [
+            pkgsOld.python38
+            pkgsOld.pip
+            pkgsOld.git
+          ];
+
+          shellHook = ''
+            export FLAKE_DIR="''${PWD}"
+            
+            echo "Setting up stereopy environment with pip..."
+            if [ -d "$FLAKE_DIR/uv-projects/stereopy" ]; then
+              cd "$FLAKE_DIR/uv-projects/stereopy"
+              ${pkgsOld.python38}/bin/python -m venv .venv
+              source .venv/bin/activate
+              if [ -f "requirements.txt" ]; then
+                pip install -r requirements.txt
+              else
+                pip install -e .
+              fi
+              cd "$FLAKE_DIR"
+            else
+              echo "Warning: uv-projects/stereopy directory not found at $FLAKE_DIR/uv-projects/stereopy"
+            fi
+            
+            echo "Stereopy Shell Activated (Python 3.8)"
           '';
         };
 
