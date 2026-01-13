@@ -18,7 +18,7 @@
         pkgsOld = import nixpkgs-22-11 { inherit system; };
 
         # Helper function to create a Python environment using nix + uv
-        mkUvPythonEnv = { pythonPkgs, projectName, nixpkgs: pkgs }:
+        mkUvPythonEnv = { pythonPkgs, projectName, nixpkgs ? pkgs }:
           nixpkgs.stdenv.mkDerivation {
             name = "${projectName}-env";
             src = ./.;
@@ -26,23 +26,16 @@
             buildInputs = [
               pythonPkgs
               nixpkgs.uv
-              nixpkgs.git
             ];
 
             phases = [ "unpackPhase" "buildPhase" "installPhase" ];
 
             buildPhase = ''
               export HOME=$(mktemp -d)
-              export VENV_DIR=$HOME/.venv
-              
-              # Create virtual environment
-              ${pythonPkgs}/bin/python -m venv $VENV_DIR
-              
-              # Run uv sync in the project directory
-              cd uv-project/${projectName}
-              export PATH="$VENV_DIR/bin:$PATH"
+              cd uv-projects/${projectName}
+              ${pythonPkgs}/bin/python -m venv $HOME/.venv
+              export PATH="$HOME/.venv/bin:$PATH"
               ${nixpkgs.uv}/bin/uv sync
-              
               cd - > /dev/null
             '';
 
@@ -52,7 +45,7 @@
             '';
           };
 
-        # SPIX environment
+        # Environment definitions
         spixEnv = mkUvPythonEnv {
           pythonPkgs = pkgs.python312;
           projectName = "spix";
@@ -65,21 +58,13 @@
           nixpkgs = pkgsStable;
         };
 
-        # Stereopy environment
         stereopyEnv = mkUvPythonEnv {
           pythonPkgs = pkgsOld.python38;
           projectName = "stereopy";
           nixpkgs = pkgsOld;
         };
 
-        # VisiumHD Zarr environment
         visiumhdZarrEnv = mkUvPythonEnv {
-          pythonPkgs = pkgsStable.python312;
-          projectName = "visiumhd-zarr";
-          inherit pkgs;
-        };
-
-        visiumhdZarrEnvStable = mkUvPythonEnv {
           pythonPkgs = pkgsStable.python312;
           projectName = "visiumhd-zarr";
           nixpkgs = pkgsStable;
@@ -170,7 +155,7 @@
           name = "visiumhd-zarr";
           tag = "v0.0.1";
           contents = [
-            visiumhdZarrEnvStable
+            visiumhdZarrEnv
             pkgsStable.python312
             pkgsStable.bash
             pkgsStable.coreutils
@@ -195,7 +180,7 @@
             Cmd = [ "${pkgsStable.python312}/bin/python3" ];
             WorkingDir = "/";
             Env = [
-              "PATH=${visiumhdZarrEnvStable}/bin:${pkgsStable.lib.makeBinPath [ pkgsStable.bash pkgsStable.coreutils ]}"
+              "PATH=${visiumhdZarrEnv}/bin:${pkgsStable.lib.makeBinPath [ pkgsStable.bash pkgsStable.coreutils ]}"
               "PYTHONUNBUFFERED=1"
               "LD_LIBRARY_PATH=${pkgsStable.lib.makeLibraryPath [ pkgsStable.zlib pkgsStable.bzip2 pkgsStable.openssl pkgsStable.libffi pkgsStable.ncurses ]}"
             ];
@@ -244,22 +229,19 @@
           ];
 
           shellHook = ''
-            export VENV_DIR="''${PWD}/.venv-spix"
-            
-            if [ ! -d "$VENV_DIR" ]; then
-              echo "Creating virtual environment in $VENV_DIR..."
-              python -m venv "$VENV_DIR"
-            fi
-            
-            source "$VENV_DIR/bin/activate"
+            export FLAKE_DIR="''${PWD}"
             
             echo "Installing SPIX dependencies with uv..."
-            cd uv-project/spix
-            uv sync
-            cd - > /dev/null
+            if [ -d "$FLAKE_DIR/uv-projects/spix" ]; then
+              cd "$FLAKE_DIR/uv-projects/spix"
+              uv sync --python ${pkgs.python312}/bin/python --active
+              source .venv/bin/activate
+              cd "$FLAKE_DIR"
+            else
+              echo "Warning: uv-projects/spix directory not found at $FLAKE_DIR/uv-projects/spix"
+            fi
             
             echo "SPIX Analysis Shell Activated"
-            echo "Virtual environment: $VENV_DIR"
           '';
         };
 
