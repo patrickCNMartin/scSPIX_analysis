@@ -28,15 +28,17 @@
               nixpkgs.uv
             ];
 
+            __noChroot = true;
             phases = [ "unpackPhase" "buildPhase" "installPhase" ];
 
             buildPhase = ''
               export HOME=$(mktemp -d)
-              export UV_CACHE_DIR=$(mktemp -d)
+              export UV_NO_CACHE=1
               cd uv-projects/${projectName}
               ${pythonPkgs}/bin/python -m venv $HOME/.venv
               export PATH="$HOME/.venv/bin:$PATH"
-              ${nixpkgs.uv}/bin/uv sync --no-cache
+              ${nixpkgs.uv}/bin/uv venv $HOME/.venv --python ${pythonPkgs}/bin/python
+              ${nixpkgs.uv}/bin/uv sync --python ${pythonPkgs}/bin/python
               cd - > /dev/null
             '';
 
