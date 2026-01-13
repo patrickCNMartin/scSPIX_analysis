@@ -1,16 +1,28 @@
 # scSPIX Analysis
 
-Reproducible analysis pipeline for the scSPIX package and paper. This project provides a Nextflow-based workflow for processing and analyzing spatial transcriptomics data, with containerized environments built using Nix for maximum reproducibility.
+Reproducible analysis pipeline for the scSPIX package and paper. This project provides a Nextflow-based workflow for processing and analyzing spatial transcriptomics data, with containerized environments built using Nix and uv for maximum reproducibility.
 
 ## Table of Contents
 
+- [Quick Start](#quick-start)
 - [Project Structure](#project-structure)
 - [Installation](#installation)
-- [Building OCI Images from Nix](#building-oci-images-from-nix)
 - [Development Environment](#development-environment)
+- [Building Container Images](#building-container-images)
 - [Running the Pipeline](#running-the-pipeline)
 - [Container Images](#container-images)
 - [Contributing](#contributing)
+
+## Quick Start
+
+If you're new to this project and want to re-run the analysis pipeline:
+
+1. **Install Nix** (see [Installation](#installation) below)
+2. **Set up development environment**: `nix develop`
+3. **Build container images**: `nix run .#copy-spix-image`
+4. **Run the pipeline**: `nextflow run main.nf`
+
+That's it! The Nix flake handles all dependencies automatically.
 
 ## Project Structure
 
@@ -21,25 +33,28 @@ scSPIX_analysis/
 │   ├── Stereopy_make_bin3_h5ad.py
 │   ├── VisiumHD_2um_CRC_multiscale_workflow.py
 │   └── VisiumHD_2um_make_zarr.py
-├── container_cache/              # Cached container images (.tar, .sif)
-│   ├── spix_analysis.tar
-│   ├── stereopy.tar
-│   └── visiumhd_zarr.tar
-├── container_def/                # Container definitions
+├── container_cache/              # Cached container images (.tar files)
+│   ├── spix-v0.0.1.tar
+│   ├── stereopy-v0.0.1.tar
+│   └── visiumhd-zarr-v0.0.1.tar
+├── container_def/                # Legacy container definitions (for reference)
 │   ├── spix/                     # SPIX analysis container
 │   │   ├── Dockerfile
-│   │   ├── spix_1007.yml        # Conda environment (for reference)
 │   │   └── spix.def              # Singularity definition
 │   ├── stereopy/                 # Stereopy container
 │   │   ├── Dockerfile
-│   │   ├── stereopy.yml
 │   │   └── stereopy.def
 │   └── visiumhd_zarr/            # VisiumHD Zarr container
 │       ├── Dockerfile
-│       ├── visiumhd_zarr.yml
 │       └── visiumhd_zarr.def
 ├── data/                         # Input data directory
-├── envs/                         # Environment YAML files (for reference)
+├── uv-projects/                  # Python project definitions (uv/pyproject.toml)
+│   ├── spix/                     # SPIX analysis environment
+│   │   └── pyproject.toml
+│   ├── stereopy/                 # Stereopy environment
+│   │   └── pyproject.toml
+│   └── visiumhd-zarr/            # VisiumHD Zarr environment
+│       └── pyproject.toml
 ├── lib/                          # Nextflow library functions
 │   └── utils.nf
 ├── workflows/                    # Nextflow workflow definitions
@@ -60,198 +75,322 @@ scSPIX_analysis/
 
 ### Prerequisites
 
-- **Nix** (with Flakes enabled) - for building container images and development environment
-- **Nextflow** - for running the analysis pipeline
-- **Docker** or **Podman** - for running containerized workflows (optional, if using Nix-built images)
+- **Nix** (with Flakes enabled) - handles all dependencies automatically
+- **Nextflow** - included in the development environment
+- **Docker** or **Podman** - for running containerized workflows
 
 ### Installing Nix
 
-If you don't have Nix installed:
+**What is Nix?** Nix is a package manager that creates reproducible development environments. It automatically handles Python versions, system libraries, and all dependencies.
+
+**Installation steps:**
 
 ```bash
-# Install Nix (single-user installation)
+# Install Nix (single-user installation - recommended)
 sh <(curl -L https://nixos.org/nix/install) --no-daemon
 
-# Enable Flakes (add to ~/.config/nix/nix.conf or /etc/nix/nix.conf)
+# Enable Flakes (required for this project)
+mkdir -p ~/.config/nix
 echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
+
+# Restart your shell or run: source ~/.bashrc (or your shell's config)
 ```
+
+**Verify installation:**
+```bash
+nix --version  # Should show version 2.18+
+```
+
+**Troubleshooting:**
+- If you get permission errors, try: `sudo mkdir -p /nix && sudo chown $USER /nix`
+- On macOS, you might need: `sudo launchctl kickstart -k system/org.nixos.nix-daemon`
 
 ### Setting Up the Development Environment
 
-The project includes a Nix flake that provides a reproducible development environment:
+The development environment is managed by Nix and includes everything you need:
 
 ```bash
-# Enter the development shell
+# Enter the development environment
+cd /path/to/scSPIX_analysis
 nix develop
 
-# Or use direnv (recommended for automatic activation)
+# This automatically provides:
+# - Python 3.12 with uv package manager
+# - Nextflow for running pipelines
+# - Git for version control
+# - All system dependencies
+```
+
+**What happens when you run `nix develop`:**
+
+1. Nix downloads and sets up Python 3.12
+2. Installs uv (fast Python package manager)
+3. Sets up the SPIX analysis environment automatically
+4. Provides Nextflow and other tools
+
+**For automatic environment activation (optional):**
+
+```bash
+# Install direnv (optional but recommended)
+# On macOS: brew install direnv
+# On Linux: your package manager
+
+# Set up automatic activation
 echo "use flake" > .envrc
 direnv allow
 ```
 
-The development shell includes:
-- Python 3.12
-- Nextflow
-- Git
-- PyYAML
-- All necessary build tools
+Now every time you `cd` into the project directory, the environment activates automatically.
 
-## Building OCI Images from Nix
+## Building Container Images
 
-This project uses Nix to build OCI (Open Container Initiative) images directly from nixpkgs, eliminating the need for Conda and ensuring reproducible builds.
+This project uses Nix to build container images directly from Python environments defined with uv. No Conda or Dockerfiles needed!
+
+### Why Use Nix for Containers?
+
+- **Reproducible**: Same image every time, regardless of system
+- **Fast**: Incremental builds, only rebuilds what changed
+- **No Docker daemon**: Builds directly to tar files
+- **Small**: Only includes what's actually needed
 
 ### Available Images
 
-The flake provides three container images:
+- **spix-image**: Complete SPIX analysis environment (134+ Python packages)
+- **stereopy-image**: Stereopy analysis tools
+- **visiumhd-zarr-image**: VisiumHD Zarr data processing
 
-- **spix-image**: Main SPIX analysis environment with all scientific Python packages
-- **stereopy-image**: Stereopy-specific analysis environment
-- **visiumhd-zarr-image**: VisiumHD Zarr processing environment
+### Quick Build (Recommended)
 
-### Building Images
-
-#### Option 1: Build to Default Location (Recommended)
-
-Use the provided apps to build and copy images to `./container_cache`:
+Build and save images to `container_cache/` automatically:
 
 ```bash
-# Build and copy SPIX image
+# Build all three images (run in development environment)
 nix run .#copy-spix-image
-
-# Build and copy Stereopy image
 nix run .#copy-stereopy-image
-
-# Build and copy VisiumHD Zarr image
 nix run .#copy-visiumhd-zarr-image
 ```
 
-Images will be saved as:
-- `container_cache/spix-v0.0.1.tar`
-- `container_cache/stereopy-v0.0.1.tar`
-- `container_cache/visiumhd-zarr-v0.0.1.tar`
+**What this does:**
+- Downloads all dependencies
+- Builds complete Python environments
+- Creates OCI-compliant container images
+- Saves as `.tar` files in `container_cache/`
 
-#### Option 2: Build to Custom Directory
+### Loading Images
 
-```bash
-# Copy to a custom directory
-nix run .#copy-spix-image /path/to/your/directory
-```
-
-#### Option 3: Build Directly with Nix
+After building, load into Docker or Podman:
 
 ```bash
-# Build image (creates symlink at ./result)
-nix build .#spix-image
-
-# Load into Docker
-docker load -i ./result
-
-# Or load into Podman
-podman load -i ./result
-```
-
-### Loading Images into Container Runtime
-
-After building, load the images into your container runtime:
-
-```bash
-# Docker
+# Load SPIX image
 docker load -i container_cache/spix-v0.0.1.tar
-docker tag spix:v0.0.1 spix:latest  # Optional: add latest tag
 
-# Podman
-podman load -i container_cache/spix-v0.0.1.tar
-podman tag spix:v0.0.1 spix:latest
+# Tag for convenience
+docker tag spix:v0.0.1 spix:latest
+
+# Verify
+docker images | grep spix
 ```
 
-### Image Contents
+### Advanced Usage
 
-All images are built using:
-- **Python 3.12** (matching the original Dockerfile base)
-- **nixpkgs packages** instead of Conda for better reproducibility
-- **Pip packages** for dependencies not available in nixpkgs (installed at build time)
-- **System libraries** (zlib, openssl, libffi, etc.) from nixpkgs
-- **Build tools** (gcc, make, etc.) for compiling Python packages
+**Build to custom location:**
+```bash
+nix run .#copy-spix-image /my/custom/directory
+```
 
-### Versioning
+**Build image directly (for inspection):**
+```bash
+nix build .#spix-image
+ls -la result  # Shows the .tar file
+```
 
-Images are tagged with semantic versions (currently `v0.0.1`). To update versions, modify the `tag` field in `flake.nix` for each image.
+**Access Python environments without containers:**
+```bash
+# Build Python environment only
+nix build .#spix-python
+
+# Use Python directly
+./result/bin/python3 -c "import scanpy; print('Ready!')"
+```
 
 ## Development Environment
 
-### Using the Nix Development Shell
+### What the Development Environment Provides
+
+When you run `nix develop`, you get:
+
+- **Python 3.12** with uv package manager
+- **Nextflow** for running analysis pipelines
+- **Git** for version control
+- **Complete SPIX environment** with all dependencies
+
+### Using the Environment
 
 ```bash
-# Activate the development shell
+# Enter development environment
 nix develop
 
-# The shell includes:
-# - Python 3.12
-# - Nextflow
-# - Git
-# - PyYAML
+# You're now ready to:
+# - Run Nextflow pipelines
+# - Use Python with all scientific packages
+# - Build container images
+# - Run analysis scripts from bin/
 ```
 
-### Python Environments
+### Python Package Management
 
-You can also access the Python environments directly:
+The environment uses **uv** for fast, reliable Python package management:
 
 ```bash
-# Build Python environment (without container)
+# In development environment
+cd uv-projects/spix
+uv sync  # Install/update dependencies
+source .venv/bin/activate  # Use the environment
+python -c "import scanpy; print('SPIX ready!')"
+```
+
+### Direct Python Environment Access
+
+Build Python environments without containers:
+
+```bash
+# Build SPIX Python environment
 nix build .#spix-python
 
-# Use the Python interpreter
-./result/bin/python3
+# Use Python directly
+./result/bin/python3 script.py
 ```
 
 ## Running the Pipeline
 
+### Prerequisites
+
+1. **Enter development environment**: `nix develop`
+2. **Build container images**: Follow [Building Container Images](#building-container-images)
+3. **Prepare data**: Place input data in `data/` directory
+
 ### Configuration
 
-Edit `nextflow.config` to configure:
-- Input data paths
-- Output directories
-- Which workflows to run (`run_stereo`, `run_visiumhd`)
+Edit `nextflow.config` to set:
+- `run_stereo = true` - Enable Stereo-seq analysis
+- `run_visiumhd = true` - Enable VisiumHD analysis
+- `outdir = "./results"` - Output directory
+- Data input paths
 
-### Running Workflows
+### Running the Analysis
 
 ```bash
-# Run with default parameters
+# In development environment
 nextflow run main.nf
 
-# Run with custom parameters
+# With custom parameters
 nextflow run main.nf \
   --run_stereo true \
   --run_visiumhd true \
-  --outdir ./results
+  --outdir ./my_results
 ```
 
-### Available Workflows
+### What the Pipeline Does
 
-- **Stereo-seq**: Conversion and analysis of Stereo-seq data
-- **VisiumHD**: Conversion and analysis of VisiumHD data
-- **Container Conversion**: Automatic conversion of `.tar` to `.sif` files
+- **Stereo-seq workflow**: Converts and analyzes Stereo-seq spatial data
+- **VisiumHD workflow**: Processes VisiumHD data and creates Zarr files
+- **Container conversion**: Converts `.tar` images to `.sif` (Singularity) format
+- **Data download**: Downloads required datasets automatically
+
+### Output
+
+Results are saved to the configured output directory with organized subdirectories for each analysis type.
 
 ## Container Images
 
+All images are built from `pyproject.toml` files using uv + Nix for reproducible environments.
+
 ### SPIX Image (`spix-image`)
 
-Contains the complete SPIX analysis environment with:
-- Scientific Python stack (numpy, scipy, pandas, matplotlib)
-- Bioinformatics packages (scanpy, anndata, celltypist)
-- Spatial analysis tools (squidpy, spatialdata, geopandas)
-- Image processing (opencv, imageio, tifffile)
-- Jupyter/IPython for interactive analysis
+Complete analysis environment with 130+ Python packages:
+- **Core science**: numpy, scipy, pandas, matplotlib, scikit-learn
+- **Bioinformatics**: scanpy, anndata, celltypist, squidpy
+- **Spatial analysis**: spatialdata, geopandas, shapely
+- **Image processing**: opencv, imageio, tifffile, scikit-image
+- **Data formats**: zarr, h5py, xarray, dask
+- **SPIX package**: From GitHub repository
 
 ### Stereopy Image (`stereopy-image`)
 
-Focused environment for Stereopy analysis:
-- Stereopy package
-- Scanpy and AnnData
-- Core scientific Python packages
+Streamlined for Stereopy workflows:
+- Stereopy analysis package
+- Scanpy and AnnData for single-cell analysis
+- Essential scientific computing packages
 
 ### VisiumHD Zarr Image (`visiumhd-zarr-image`)
 
-Specialized for VisiumHD Zarr processing:
-- Spatialdata-io for reading VisiumHD data
-- Zarr support for efficient data storage
+Optimized for VisiumHD data processing:
+- spatialdata-io for reading VisiumHD datasets
+- Zarr format support for efficient storage
+- Core spatial analysis tools
+
+## Troubleshooting
+
+### Nix Installation Issues
+
+**"command not found: nix"**
+```bash
+# Check if Nix is installed
+which nix
+
+# If not installed, reinstall
+sh <(curl -L https://nixos.org/nix/install) --no-daemon
+```
+
+**"experimental features not enabled"**
+```bash
+# Enable flakes
+echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
+```
+
+### Development Environment Issues
+
+**"cannot connect to socket"**
+```bash
+# Restart Nix daemon
+sudo launchctl kickstart -k system/org.nixos.nix-daemon  # macOS
+sudo systemctl restart nix-daemon  # Linux
+```
+
+**Slow first run**
+- Nix downloads all dependencies on first use
+- Subsequent runs are much faster
+- Use `nix develop --offline` for offline work
+
+### Container Building Issues
+
+**"permission denied"**
+```bash
+# Ensure you can write to container_cache/
+mkdir -p container_cache
+```
+
+**Out of disk space**
+- Container builds need temporary space
+- Clean up with: `nix-collect-garbage`
+
+### Pipeline Issues
+
+**"Nextflow not found"**
+- Make sure you're in `nix develop` environment
+- Check: `which nextflow`
+
+**"Container not found"**
+- Ensure images are built and loaded: `docker images`
+- Check container_cache/ directory
+
+## Contributing
+
+To modify the Python environments:
+
+1. Edit `uv-projects/*/pyproject.toml` files
+2. Add/remove dependencies as needed
+3. Test with: `nix develop` and `uv sync`
+4. Rebuild containers: `nix run .#copy-*-image`
+
+The Nix flake automatically picks up changes to `pyproject.toml` files.
