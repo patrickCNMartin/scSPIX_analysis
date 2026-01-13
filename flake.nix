@@ -17,77 +17,73 @@
         pkgsStable = import nixpkgs-stable { inherit system; };
         pkgsOld = import nixpkgs-22-11 { inherit system; };
 
-        # Helper function to create Python environment using uv with pyproject.toml
-        mkUvEnv = pythonPkgs: projectDir:
-          pkgs.runCommand "uv-env" {
-            buildInputs = [ pythonPkgs pkgs.uv ];
-            __noChroot = true;  # Allow network access for uv
-          } ''
-            export HOME=$TMPDIR
-            mkdir -p $out/lib/${pythonPkgs.libPrefix}/site-packages
+        # Helper function to create a Python environment using nix + uv
+        mkUvPythonEnv = { pythonPkgs, projectName, nixpkgs: pkgs }:
+          nixpkgs.stdenv.mkDerivation {
+            name = "${projectName}-env";
+            src = ./.;
 
-            # Copy the uv project
-            cp -r ${projectDir} $TMPDIR/project
-            cd $TMPDIR/project
+            buildInputs = [
+              pythonPkgs
+              nixpkgs.uv
+              nixpkgs.git
+            ];
 
-            # Use uv to sync dependencies (excluding the project itself)
-            uv sync --no-install-project --python ${pythonPkgs}/bin/python
+            phases = [ "unpackPhase" "buildPhase" "installPhase" ];
 
-            # Copy the virtual environment to output
-            if [ -d .venv/lib/${pythonPkgs.libPrefix}/site-packages ]; then
-              cp -r .venv/lib/${pythonPkgs.libPrefix}/site-packages/* $out/lib/${pythonPkgs.libPrefix}/site-packages/
-            fi
+            buildPhase = ''
+              export HOME=$(mktemp -d)
+              export VENV_DIR=$HOME/.venv
+              
+              # Create virtual environment
+              ${pythonPkgs}/bin/python -m venv $VENV_DIR
+              
+              # Run uv sync in the project directory
+              cd uv-project/${projectName}
+              export PATH="$VENV_DIR/bin:$PATH"
+              ${nixpkgs.uv}/bin/uv sync
+              
+              cd - > /dev/null
+            '';
 
-            mkdir -p $out/bin
-            cp ${pythonPkgs}/bin/* $out/bin/
-          '';
+            installPhase = ''
+              mkdir -p $out
+              cp -r $HOME/.venv/* $out/
+            '';
+          };
 
-        # SPIX environment using uv + SPIX from git
-        spixUvEnv = mkUvEnv pkgs.python312 ./uv-projects/spix;
-        spixEnv = pkgs.runCommand "spix-env" {
-          buildInputs = [ spixUvEnv pkgs.python312 ];
-        } ''
-          export PYTHONPATH="${spixUvEnv}/lib/${pkgs.python312.libPrefix}/site-packages:$PYTHONPATH"
-          export PATH="${spixUvEnv}/bin:$PATH"
-          export HOME=$TMPDIR
+        # SPIX environment
+        spixEnv = mkUvPythonEnv {
+          pythonPkgs = pkgs.python312;
+          projectName = "spix";
+          inherit pkgs;
+        };
 
-          mkdir -p $out/lib/${pkgs.python312.libPrefix}/site-packages
-          cp -r ${spixUvEnv}/lib/${pkgs.python312.libPrefix}/site-packages/* $out/lib/${pkgs.python312.libPrefix}/site-packages/
+        spixEnvStable = mkUvPythonEnv {
+          pythonPkgs = pkgsStable.python312;
+          projectName = "spix";
+          nixpkgs = pkgsStable;
+        };
 
-          # Install SPIX from git (uv handles most deps, we add SPIX separately)
-          cp -r ${spix} $TMPDIR/spix-src
-          chmod -R +w $TMPDIR/spix-src
-          pip install --target $out/lib/${pkgs.python312.libPrefix}/site-packages --no-deps --no-build-isolation $TMPDIR/spix-src
+        # Stereopy environment
+        stereopyEnv = mkUvPythonEnv {
+          pythonPkgs = pkgsOld.python38;
+          projectName = "stereopy";
+          nixpkgs = pkgsOld;
+        };
 
-          mkdir -p $out/bin
-          cp ${spixUvEnv}/bin/* $out/bin/
-        '';
+        # VisiumHD Zarr environment
+        visiumhdZarrEnv = mkUvPythonEnv {
+          pythonPkgs = pkgsStable.python312;
+          projectName = "visiumhd-zarr";
+          inherit pkgs;
+        };
 
-        spixUvEnvStable = mkUvEnv pkgsStable.python312 ./uv-projects/spix;
-        spixEnvStable = pkgsStable.runCommand "spix-env-stable" {
-          buildInputs = [ spixUvEnvStable pkgsStable.python312 ];
-        } ''
-          export PYTHONPATH="${spixUvEnvStable}/lib/${pkgsStable.python312.libPrefix}/site-packages:$PYTHONPATH"
-          export PATH="${spixUvEnvStable}/bin:$PATH"
-          export HOME=$TMPDIR
-
-          mkdir -p $out/lib/${pkgsStable.python312.libPrefix}/site-packages
-          cp -r ${spixUvEnvStable}/lib/${pkgsStable.python312.libPrefix}/site-packages/* $out/lib/${pkgsStable.python312.libPrefix}/site-packages/
-
-          # Install SPIX from git (uv handles most deps, we add SPIX separately)
-          cp -r ${spix} $TMPDIR/spix-src
-          chmod -R +w $TMPDIR/spix-src
-          pip install --target $out/lib/${pkgsStable.python312.libPrefix}/site-packages --no-deps --no-build-isolation $TMPDIR/spix-src
-
-          mkdir -p $out/bin
-          cp ${spixUvEnvStable}/bin/* $out/bin/
-        '';
-
-        # Stereopy environment using uv
-        stereopyPythonWithPip = mkUvEnv pkgsOld.python38 ./uv-projects/stereopy;
-
-        # VisiumHD Zarr environment using uv
-        visiumhdZarrPythonWithPip = mkUvEnv pkgsStable.python312 ./uv-projects/visiumhd-zarr;
+        visiumhdZarrEnvStable = mkUvPythonEnv {
+          pythonPkgs = pkgsStable.python312;
+          projectName = "visiumhd-zarr";
+          nixpkgs = pkgsStable;
+        };
 
         # ==============================================================================
         # OCI IMAGES
@@ -98,6 +94,7 @@
           tag = "v0.0.1";
           contents = [
             spixEnvStable
+            pkgsStable.python312
             pkgsStable.bash
             pkgsStable.coreutils
             pkgsStable.findutils
@@ -118,13 +115,13 @@
             pkgsStable.readline
           ];
           config = {
-            Cmd = [ "${spixEnvStable}/bin/python3" ];
+            Cmd = [ "${pkgsStable.python312}/bin/python3" ];
             WorkingDir = "/";
             Env = [
-              "PATH=${pkgsStable.lib.makeBinPath [ spixEnvStable pkgsStable.bash pkgsStable.coreutils ]}"
-              "PYTHONPATH=${spixEnvStable}/lib/${pkgsStable.python312.libPrefix}/site-packages:$PYTHONPATH"
+              "PATH=${spixEnvStable}/bin:${pkgsStable.lib.makeBinPath [ pkgsStable.bash pkgsStable.coreutils ]}"
+              "PYTHONPATH=${spixEnvStable}/lib/${pkgsStable.python312.libPrefix}/site-packages"
               "PYTHONUNBUFFERED=1"
-              "LD_LIBRARY_PATH=${pkgsStable.lib.makeLibraryPath [ spixEnvStable pkgsStable.zlib pkgsStable.bzip2 pkgsStable.openssl pkgsStable.libffi pkgsStable.ncurses ]}"
+              "LD_LIBRARY_PATH=${pkgsStable.lib.makeLibraryPath [ pkgsStable.zlib pkgsStable.bzip2 pkgsStable.openssl pkgsStable.libffi pkgsStable.ncurses ]}"
             ];
           };
         };
@@ -133,7 +130,8 @@
           name = "stereopy";
           tag = "v0.0.1";
           contents = [
-            stereopyPythonWithPip
+            stereopyEnv
+            pkgsOld.python38
             pkgsOld.bash
             pkgsOld.coreutils
             pkgsOld.findutils
@@ -158,10 +156,10 @@
             pkgsOld.sqlite
           ];
           config = {
-            Cmd = [ "${stereopyPythonWithPip}/bin/python3" ];
+            Cmd = [ "${pkgsOld.python38}/bin/python3" ];
             WorkingDir = "/";
             Env = [
-              "PATH=${pkgsOld.lib.makeBinPath [ stereopyPythonWithPip pkgsOld.bash pkgsOld.coreutils ]}"
+              "PATH=${stereopyEnv}/bin:${pkgsOld.lib.makeBinPath [ pkgsOld.bash pkgsOld.coreutils ]}"
               "PYTHONUNBUFFERED=1"
               "LD_LIBRARY_PATH=${pkgsOld.lib.makeLibraryPath [ pkgsOld.zlib pkgsOld.bzip2 pkgsOld.openssl pkgsOld.libffi pkgsOld.ncurses pkgsOld.stdenv.cc.cc.lib pkgsOld.gcc.cc.lib pkgsOld.icu pkgsOld.sqlite ]}"
             ];
@@ -172,7 +170,8 @@
           name = "visiumhd-zarr";
           tag = "v0.0.1";
           contents = [
-            visiumhdZarrPythonWithPip
+            visiumhdZarrEnvStable
+            pkgsStable.python312
             pkgsStable.bash
             pkgsStable.coreutils
             pkgsStable.findutils
@@ -193,10 +192,10 @@
             pkgsStable.readline
           ];
           config = {
-            Cmd = [ "${visiumhdZarrPythonWithPip}/bin/python3" ];
+            Cmd = [ "${pkgsStable.python312}/bin/python3" ];
             WorkingDir = "/";
             Env = [
-              "PATH=${pkgsStable.lib.makeBinPath [ visiumhdZarrPythonWithPip pkgsStable.bash pkgsStable.coreutils ]}"
+              "PATH=${visiumhdZarrEnvStable}/bin:${pkgsStable.lib.makeBinPath [ pkgsStable.bash pkgsStable.coreutils ]}"
               "PYTHONUNBUFFERED=1"
               "LD_LIBRARY_PATH=${pkgsStable.lib.makeLibraryPath [ pkgsStable.zlib pkgsStable.bzip2 pkgsStable.openssl pkgsStable.libffi pkgsStable.ncurses ]}"
             ];
@@ -238,17 +237,29 @@
       in {
         devShells.default = pkgs.mkShell {
           buildInputs = [
-            spixEnv
+            pkgs.python312
             pkgs.uv
             pkgs.git
             pkgs.nextflow
           ];
 
           shellHook = ''
-            export PYTHONPATH="${spixEnv}/lib/${pkgs.python312.libPrefix}/site-packages:$PYTHONPATH"
-            export PATH="${spixEnv}/bin:$PATH"
+            export VENV_DIR="''${PWD}/.venv-spix"
+            
+            if [ ! -d "$VENV_DIR" ]; then
+              echo "Creating virtual environment in $VENV_DIR..."
+              python -m venv "$VENV_DIR"
+            fi
+            
+            source "$VENV_DIR/bin/activate"
+            
+            echo "Installing SPIX dependencies with uv..."
+            cd uv-project/spix
+            uv sync
+            cd - > /dev/null
+            
             echo "SPIX Analysis Shell Activated"
-            echo "SPIX package available: $(python3 -c 'import SPIX; print(SPIX.__file__)' 2>/dev/null || echo 'Not found')"
+            echo "Virtual environment: $VENV_DIR"
           '';
         };
 
@@ -257,8 +268,8 @@
           stereopy-image = stereopyImage;
           visiumhd-zarr-image = visiumhdZarrImage;
           spix-python = spixEnv;
-          stereopy-python = stereopyPythonWithPip;
-          visiumhd-zarr-python = visiumhdZarrPythonWithPip;
+          stereopy-python = stereopyEnv;
+          visiumhd-zarr-python = visiumhdZarrEnv;
         };
 
         apps = {
