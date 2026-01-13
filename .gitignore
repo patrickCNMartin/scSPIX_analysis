@@ -1,4 +1,4 @@
-# Nextflo run files
+# Nextflow run files
 .nextflow/
 .logs/
 work/
@@ -6,6 +6,13 @@ work/
 # Never load local data if present
 data/
 container_cache/
+
+# Python virtual environments
+.venv/
+.venv-*/
+venv/
+ENV/
+env/
+
 # OS
 .DS_Store
-
