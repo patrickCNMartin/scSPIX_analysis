@@ -8,264 +8,41 @@
     flake-utils.url = "github:numtide/flake-utils";
     spix.url = "github:whistle-ch0i/SPIX";
     spix.flake = false;
+    ux2nix.url = "github:adisbladis/ux2nix";
+    ux2nix.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = { self, nixpkgs, nixpkgs-stable, nixpkgs-22-11, flake-utils, spix }:
+  outputs = { self, nixpkgs, nixpkgs-stable, nixpkgs-22-11, flake-utils, spix, ux2nix }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
         pkgsStable = import nixpkgs-stable { inherit system; };
         pkgsOld = import nixpkgs-22-11 { inherit system; };
 
-        # SPIX pip requirements
-        spixPipRequirements = pkgs.writeText "spix-requirements.txt" ''
-          aiobotocore==2.24.2
-          aiohappyeyeballs==2.6.1
-          aiohttp==3.13.0
-          aioitertools==0.12.0
-          aiosignal==1.4.0
-          alphashape==1.3.1
-          anndata==0.11.4
-          annotated-types==0.7.0
-          array-api-compat==1.12.0
-          asciitree==0.3.3
-          asttokens==3.0.0
-          async-timeout==5.0.1
-          botocore==1.40.18
-          celltypist==1.7.1
-          click-log==0.4.0
-          colorcet==3.1.0
-          comm==0.2.3
-          contourpy==1.3.2
-          cycler==0.12.1
-          dask-expr==1.1.19
-          dask-image==2024.5.3
-          datashader==0.18.2
-          debugpy==1.8.17
-          docrep==0.3.2
-          et-xmlfile==2.0.0
-          executing==2.2.1
-          fasteners==0.20
-          flowio==1.4.0
-          fonttools==4.60.1
-          frozenlist==1.8.0
-          harmonypy==0.0.10
-          igraph==0.11.9
-          imagecodecs==2025.3.30
-          inflect==7.5.0
-          jmespath==1.0.1
-          jupyter-client==8.6.3
-          jupyter-core==5.8.1
-          kiwisolver==1.4.9
-          lazy-loader==0.4
-          legacy-api-wrap==1.4.1
-          leidenalg==0.10.2
-          llvmlite==0.45.1
-          locket==1.0.0
-          markdown-it-py==4.0.0
-          matplotlib-inline==0.1.7
-          matplotlib-scalebar==0.9.0
-          mdurl==0.1.2
-          minisom==2.3.5
-          multidict==6.7.0
-          multipledispatch==1.0.0
-          multiscale-spatial-image==2.0.3
-          naivede==1.2.0
-          natsort==8.4.0
-          nest-asyncio==1.6.0
-          numba==0.62.1
-          ome-types==0.6.1
-          ome-zarr==0.11.1
-          omnipath==1.0.12
-          opencv-python==4.12.0.88
-          openpyxl==3.1.5
-          param==2.2.1
-          parso==0.8.5
-          partd==1.4.2
-          pexpect==4.9.0
-          pims==0.7
-          platformdirs==4.4.0
-          pooch==1.8.2
-          prompt-toolkit==3.0.52
-          propcache==0.4.0
-          psutil==7.1.0
-          ptyprocess==0.7.0
-          pure-eval==0.2.3
-          pydantic-core==2.41.1
-          pydantic-extra-types==2.10.5
-          pynndescent==0.5.13
-          pyogrio==0.11.1
-          pyparsing==3.2.5
-          python-dateutil==2.9.0.post0
-          pytz==2025.2
-          pyzmq==27.1.0
-          readfcs==2.0.1
-          rich==14.1.0
-          s3fs==2025.9.0
-          scanpy==1.11.4
-          session-info2==0.2.2
-          slicerator==1.1.0
-          spatial-image==1.2.3
-          spatialdata==0.5.0
-          spatialdata-io==0.3.0
-          squidpy==1.6.5
-          stack-data==0.6.3
-          texttable==1.7.0
-          threadpoolctl==3.6.0
-          tifffile==2025.5.10
-          toolz==1.0.0
-          tornado==6.5.2
-          tqdm-joblib==0.0.5
-          traitlets==5.14.3
-          trimesh==4.8.3
-          typeguard==4.4.4
-          typing-inspection==0.4.2
-          umap-learn==0.5.9.post2
-          validators==0.35.0
-          wcwidth==0.2.14
-          wrapt==1.17.3
-          xarray-dataclass==3.0.0
-          xarray-schema==0.0.3
-          xarray-spatial==0.4.0
-          xsdata==24.3.1
-          yarl==1.22.0
-          papermill
-          zipp==3.23.0
-        '';
+        # SPIX environment using ux2nix
+        spixEnvInputs = ux2nix.lib.mkEnvs {
+          python = pkgs.python312;
+          src = ./uv-projects/spix;
+        };
 
-        # Helper function to create Python environment with SPIX from github + all pip deps
-        mkSpixEnv = pkgs': 
-          let
-            basePython = pkgs'.python312.withPackages (ps: with ps; [
-              pip
-              setuptools
-              wheel
-              numpy
-              scipy
-              pandas
-              matplotlib
-              seaborn
-              scikit-learn
-              scikit-image
-              h5py
-              pillow
-              pyyaml
-              requests
-              tqdm
-              joblib
-              networkx
-              patsy
-              statsmodels
-              anndata
-              geopandas
-              shapely
-              pyproj
-              rtree
-              imageio
-              zarr
-              numcodecs
-              fsspec
-              pyarrow
-              xarray
-              dask
-              ipython
-              ipykernel
-              jupyter
-              notebook
-              click
-              pygments
-              packaging
-              typing-extensions
-              pydantic
-              attrs
-              certifi
-              charset-normalizer
-              idna
-              urllib3
-              cloudpickle
-              decorator
-              exceptiongroup
-              importlib-metadata
-              more-itertools
-              six
-            ]);
-            pythonVersion = pkgs'.python312;
-          in
-            pkgs'.runCommand "spix-env" {
-              buildInputs = [ basePython pkgs'.python312 ];
-            } ''
-              export PYTHONPATH="${basePython}/${pythonVersion.sitePackages}:$PYTHONPATH"
-              export PATH="${basePython}/bin:$PATH"
-              export HOME=$TMPDIR
-              
-              mkdir -p $out/lib/${pythonVersion.libPrefix}/site-packages
-              
-              pip install --target $out/lib/${pythonVersion.libPrefix}/site-packages -r ${spixPipRequirements}
-              
-              # Copy SPIX source to a writable location for building
-              cp -r ${spix} $TMPDIR/spix-src
-              chmod -R +w $TMPDIR/spix-src
-              pip install --target $out/lib/${pythonVersion.libPrefix}/site-packages --no-deps --no-build-isolation $TMPDIR/spix-src
-              
-              mkdir -p $out/bin
-              cp ${basePython}/bin/* $out/bin/
-            '';
+        # SPIX environments using ux2nix
+        spixEnv = spixEnvInputs.default;
+        spixEnvStable = (ux2nix.lib.mkEnvs {
+          python = pkgsStable.python312;
+          src = ./uv-projects/spix;
+        }).default;
 
-        spixEnv = mkSpixEnv pkgs;
-        spixEnvStable = mkSpixEnv pkgsStable;
+        # Stereopy environment using ux2nix
+        stereopyPythonWithPip = (ux2nix.lib.mkEnvs {
+          python = pkgsOld.python38;
+          src = ./uv-projects/stereopy;
+        }).default;
 
-        # Stereopy environment
-        stereopyPipRequirements = pkgs.writeText "stereopy-requirements.txt" ''
-          stereopy
-          anndata==0.11.4
-          scanpy==1.11.4
-        '';
-
-        stereopyPython = pkgsOld.python38.withPackages (ps: with ps; [
-          pip
-          setuptools
-          ipython
-        ]);
-
-        stereopyPythonWithPip = pkgsOld.runCommand "stereopy-python-with-pip" {
-          buildInputs = [ stereopyPython pkgsOld.python38 ];
-        } ''
-          export PYTHONPATH="${stereopyPython}/${pkgsOld.python38.sitePackages}:$PYTHONPATH"
-          export PATH="${stereopyPython}/bin:$PATH"
-          export HOME=$TMPDIR
-          
-          mkdir -p $out/lib/${pkgsOld.python38.libPrefix}/site-packages
-          
-          pip install --target $out/lib/${pkgsOld.python38.libPrefix}/site-packages --no-deps -r ${stereopyPipRequirements}
-          
-          mkdir -p $out/bin
-          cp ${stereopyPython}/bin/* $out/bin/
-        '';
-
-        # VisiumHD Zarr environment
-        visiumhdZarrPython = pkgsStable.python312.withPackages (ps: with ps; [
-          pip
-          setuptools
-        ]);
-
-        visiumhdZarrPipRequirements = pkgsStable.writeText "visiumhd-zarr-requirements.txt" ''
-          spatialdata-io
-        '';
-
-        visiumhdZarrPythonWithPip = pkgsStable.runCommand "visiumhd-zarr-python-with-pip" {
-          buildInputs = [ visiumhdZarrPython pkgsStable.python312 ];
-        } ''
-          export PYTHONPATH="${visiumhdZarrPython}/${pkgsStable.python312.sitePackages}:$PYTHONPATH"
-          export PATH="${visiumhdZarrPython}/bin:$PATH"
-          export HOME=$TMPDIR
-          
-          mkdir -p $out/lib/${pkgsStable.python312.libPrefix}/site-packages
-          
-          pip install --target $out/lib/${pkgsStable.python312.libPrefix}/site-packages --no-deps -r ${visiumhdZarrPipRequirements}
-          
-          mkdir -p $out/bin
-          cp ${visiumhdZarrPython}/bin/* $out/bin/
-        '';
+        # VisiumHD Zarr environment using ux2nix
+        visiumhdZarrPythonWithPip = (ux2nix.lib.mkEnvs {
+          python = pkgsStable.python312;
+          src = ./uv-projects/visiumhd-zarr;
+        }).default;
 
         # ==============================================================================
         # OCI IMAGES
@@ -300,8 +77,9 @@
             WorkingDir = "/";
             Env = [
               "PATH=${pkgsStable.lib.makeBinPath [ spixEnvStable pkgsStable.bash pkgsStable.coreutils ]}"
+              "PYTHONPATH=${spixEnvStable}/lib/${pkgsStable.python312.libPrefix}/site-packages:$PYTHONPATH"
               "PYTHONUNBUFFERED=1"
-              "LD_LIBRARY_PATH=${pkgsStable.lib.makeLibraryPath [ pkgsStable.zlib pkgsStable.bzip2 pkgsStable.openssl pkgsStable.libffi pkgsStable.ncurses ]}"
+              "LD_LIBRARY_PATH=${pkgsStable.lib.makeLibraryPath [ spixEnvStable pkgsStable.zlib pkgsStable.bzip2 pkgsStable.openssl pkgsStable.libffi pkgsStable.ncurses ]}"
             ];
           };
         };

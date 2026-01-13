@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build_meta"
+
+[project]
+name = "stereopy-analysis"
+version = "0.1.0"
+description = "Stereopy Analysis Package"
+requires-python = ">=3.8,<3.9"
+dependencies = [
+    "stereopy",
+    "anndata==0.11.4",
+    "scanpy==1.11.4"
+]
+
+[tool.uv]
+dev-dependencies = []

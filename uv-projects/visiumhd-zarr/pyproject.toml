@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build_meta"
+
+[project]
+name = "visiumhd-zarr-analysis"
+version = "0.1.0"
+description = "VisiumHD Zarr Analysis Package"
+requires-python = ">=3.12"
+dependencies = [
+    "spatialdata-io"
+]
+
+[tool.uv]
+dev-dependencies = []
