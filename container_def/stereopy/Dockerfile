@@ -1,46 +1,33 @@
-FROM python:3.12-slim
+# Use a slim bullseye image for better compatibility with older Python 3.8
+FROM python:3.12-slim-bullseye
 
-# Copy the conda environment file
-COPY stereopy.yml /tmp/stereopy.yml
+# Install uv directly from the official binary
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Install dependencies and set up environment
-RUN set -eux && \
-    # Update package manager
-    apt-get update && \
-    apt-get upgrade -y && \
-    \
-    # Install essential build tools
-    apt-get install -y --no-install-recommends \
-        build-essential \
-        python3-dev \
-        gcc \
-        g++ \
-        git \
-        wget \
-        curl && \
-    rm -rf /var/lib/apt/lists/* /var/cache/apt/*
+# Set working directory
+WORKDIR /app
 
-# Install Miniconda
-RUN set -eux && \
-    wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh && \
-    bash /tmp/miniconda.sh -b -p /opt/conda && \
-    rm /tmp/miniconda.sh && \
-    \
-    # Apply TOS acceptance to the environment
-    /opt/conda/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
-    /opt/conda/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r && \
-    \
-    # Configure conda
-    /opt/conda/bin/conda config --system --prepend channels conda-forge && \
-    /opt/conda/bin/conda update -n base conda -y && \
-    \
-    # Create the environment
-    /opt/conda/bin/conda env create -f /tmp/stereopy.yml && \
-    \
-    # Clean conda cache
-    /opt/conda/bin/conda clean --all --yes
+# Install system dependencies required for stereopy's C extensions
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libstdc++6 \
+    git \
+    && rm -rf /var/lib/apt/lists/*
 
+# Copy your pyproject.toml
+COPY pyproject.toml .
 
-# Set the entrypoint to activate the spix environment
-ENTRYPOINT ["conda", "run", "-n", "stereopy", "--no-capture-output"]
-CMD ["/bin/bash"]
+# 1. Create the environment and sync dependencies
+# 2. uv will automatically download and use Python 3.8 as defined in pyproject.toml
+# 3. We use --frozen to ensure the lockfile is respected (if you have one)
+RUN uv venv --python 3.8 && \
+    uv pip install .
+
+# Ensure the virtualenv is on the PATH
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Stereopy often needs to know where system libs are
+ENV LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"
+
+# Default command
+CMD ["python"]

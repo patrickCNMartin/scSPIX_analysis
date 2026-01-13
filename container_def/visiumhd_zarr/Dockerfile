@@ -1,46 +1,43 @@
+# Use a slim Python image
 FROM python:3.12-slim
 
-# Copy the conda environment file
-COPY visiumhd_zarr.yml /tmp/visiumhd_zarr.yml
+# Install uv from the official binary
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Install dependencies and set up environment
-RUN set -eux && \
-    # Update package manager
-    apt-get update && \
-    apt-get upgrade -y && \
-    \
-    # Install essential build tools
-    apt-get install -y --no-install-recommends \
-        build-essential \
-        python3-dev \
-        gcc \
-        g++ \
-        git \
-        wget \
-        curl && \
-    rm -rf /var/lib/apt/lists/* /var/cache/apt/*
+# Set working directory
+WORKDIR /app
 
-# Install Miniconda
-RUN set -eux && \
-    wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh && \
-    bash /tmp/miniconda.sh -b -p /opt/conda && \
-    rm /tmp/miniconda.sh && \
-    \
-    # Apply TOS acceptance to the environment
-    /opt/conda/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
-    /opt/conda/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r && \
-    \
-    # Configure conda
-    /opt/conda/bin/conda config --system --prepend channels conda-forge && \
-    /opt/conda/bin/conda update -n base conda -y && \
-    \
-    # Create the environment
-    /opt/conda/bin/conda env create -f /tmp/visiumhd_zarr.yml && \
-    \
-    # Clean conda cache
-    /opt/conda/bin/conda clean --all --yes
+# Enable bytecode compilation for performance and set the venv path
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
 
+# 1. Install minimal system build tools
+# visiumhd/zarr often requires build-essential for C-extensions
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    && rm -rf /var/lib/apt/lists/*
 
-# Set the entrypoint to activate the spix environment
-ENTRYPOINT ["conda", "run", "-n", "visiumhd_zarr", "--no-capture-output"]
-CMD ["/bin/bash"]
+# 2. Copy the pyproject.toml
+# If you are still using the .yml file, you should migrate those 
+# dependencies into a pyproject.toml in this directory.
+COPY pyproject.toml .
+# COPY uv.lock . # Uncomment if you have a lockfile
+
+# 3. Install dependencies
+# This creates the virtual environment in /opt/venv
+RUN uv sync --no-install-project --no-dev
+
+# 4. Copy the rest of your application
+COPY . .
+
+# 5. Final sync to install the local project
+RUN uv sync --no-dev
+
+# Place the virtual environment's bin on the PATH
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Entrypoint setup
+# Unlike Conda, we don't need "uv run" if we've updated the PATH
+ENTRYPOINT ["python"]
+CMD ["--version"]

@@ -1,46 +1,45 @@
+# Use a slim Python image
 FROM python:3.12-slim
 
-# Copy the conda environment file
-COPY spix_1007.yml /tmp/spix_1007.yml
+# Install uv directly from the official binary to keep the image light
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Install dependencies and set up environment
-RUN set -eux && \
-    # Update package manager
-    apt-get update && \
-    apt-get upgrade -y && \
-    \
-    # Install essential build tools
-    apt-get install -y --no-install-recommends \
-        build-essential \
-        python3-dev \
-        gcc \
-        g++ \
-        git \
-        wget \
-        curl && \
-    rm -rf /var/lib/apt/lists/* /var/cache/apt/*
+# Set the working directory
+WORKDIR /app
 
-# Install Miniconda
-RUN set -eux && \
-    wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh && \
-    bash /tmp/miniconda.sh -b -p /opt/conda && \
-    rm /tmp/miniconda.sh && \
-    \
-    # Apply TOS acceptance to the environment
-    /opt/conda/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
-    /opt/conda/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r && \
-    \
-    # Configure conda
-    /opt/conda/bin/conda config --system --prepend channels conda-forge && \
-    /opt/conda/bin/conda update -n base conda -y && \
-    \
-    # Create the environment
-    /opt/conda/bin/conda env create -f /tmp/spix_1007.yml && \
-    \
-    # Clean conda cache
-    /opt/conda/bin/conda clean --all --yes
+# Enable bytecode compilation for faster startup
+ENV UV_COMPILE_BYTECODE=1
+# Prevent uv from looking for a project root in parent directories
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
 
+# 1. Install system dependencies (only what's strictly needed)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-# Set the entrypoint to activate the spix environment
-ENTRYPOINT ["conda", "run", "-n", "spix_1007", "--no-capture-output"]
-CMD ["/bin/bash"]
+# 2. Copy dependency files first to leverage Docker layer caching
+COPY pyproject.toml .
+# If you have a lockfile, copy it too:
+# COPY uv.lock . 
+
+# 3. Install dependencies
+# We use --no-install-project to install dependencies before copying the source code
+RUN uv sync --no-install-project --no-dev
+
+# 4. Install the GitHub package specifically
+# You can also add this directly to your pyproject.toml instead
+RUN uv pip install git+https://github.com/whistle-ch0i/SPIX
+
+# 5. Copy the rest of your application code
+COPY . .
+
+# 6. Final sync to ensure the project itself is installed
+RUN uv sync --no-dev
+
+# Use the virtual environment by default
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Set the entrypoint
+ENTRYPOINT ["python"]
+CMD ["-m", "your_main_script"]
