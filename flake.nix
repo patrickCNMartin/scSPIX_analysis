@@ -17,71 +17,77 @@
         pkgsStable = import nixpkgs-stable { inherit system; };
         pkgsOld = import nixpkgs-22-11 { inherit system; };
 
-        # Helper function to create Python environment from requirements string
-        mkRequirementsEnv = pythonPkgs: requirementsContent:
-          pkgs.runCommand "requirements-env" {
-            buildInputs = [ pythonPkgs pkgs.python312Packages.pip ];
-            requirements = requirementsContent;
+        # Helper function to create Python environment using uv with pyproject.toml
+        mkUvEnv = pythonPkgs: projectDir:
+          pkgs.runCommand "uv-env" {
+            buildInputs = [ pythonPkgs pkgs.uv ];
+            __noChroot = true;  # Allow network access for uv
           } ''
             export HOME=$TMPDIR
             mkdir -p $out/lib/${pythonPkgs.libPrefix}/site-packages
 
-            # Write requirements to file
-            echo "$requirements" > requirements.txt
+            # Copy the uv project
+            cp -r ${projectDir} $TMPDIR/project
+            cd $TMPDIR/project
 
-            # Install from requirements.txt
-            pip install --target $out/lib/${pythonPkgs.libPrefix}/site-packages --no-deps -r requirements.txt
+            # Use uv to sync dependencies (excluding the project itself)
+            uv sync --no-install-project --python ${pythonPkgs}/bin/python
+
+            # Copy the virtual environment to output
+            if [ -d .venv/lib/${pythonPkgs.libPrefix}/site-packages ]; then
+              cp -r .venv/lib/${pythonPkgs.libPrefix}/site-packages/* $out/lib/${pythonPkgs.libPrefix}/site-packages/
+            fi
 
             mkdir -p $out/bin
             cp ${pythonPkgs}/bin/* $out/bin/
           '';
 
-        # SPIX environment from requirements.txt + SPIX from git
-        spixRequirementsEnv = mkRequirementsEnv pkgs.python312 (builtins.readFile ./uv-projects/spix/requirements.txt);
+        # SPIX environment using uv + SPIX from git
+        spixUvEnv = mkUvEnv pkgs.python312 ./uv-projects/spix;
         spixEnv = pkgs.runCommand "spix-env" {
-          buildInputs = [ spixRequirementsEnv pkgs.python312 ];
+          buildInputs = [ spixUvEnv pkgs.python312 ];
         } ''
-          export PYTHONPATH="${spixRequirementsEnv}/lib/${pkgs.python312.libPrefix}/site-packages:$PYTHONPATH"
-          export PATH="${spixRequirementsEnv}/bin:$PATH"
+          export PYTHONPATH="${spixUvEnv}/lib/${pkgs.python312.libPrefix}/site-packages:$PYTHONPATH"
+          export PATH="${spixUvEnv}/bin:$PATH"
           export HOME=$TMPDIR
 
           mkdir -p $out/lib/${pkgs.python312.libPrefix}/site-packages
-          cp -r ${spixRequirementsEnv}/lib/${pkgs.python312.libPrefix}/site-packages/* $out/lib/${pkgs.python312.libPrefix}/site-packages/
+          cp -r ${spixUvEnv}/lib/${pkgs.python312.libPrefix}/site-packages/* $out/lib/${pkgs.python312.libPrefix}/site-packages/
 
-          # Install SPIX from git
+          # Install SPIX from git (uv handles most deps, we add SPIX separately)
           cp -r ${spix} $TMPDIR/spix-src
           chmod -R +w $TMPDIR/spix-src
           pip install --target $out/lib/${pkgs.python312.libPrefix}/site-packages --no-deps --no-build-isolation $TMPDIR/spix-src
 
           mkdir -p $out/bin
-          cp ${spixRequirementsEnv}/bin/* $out/bin/
+          cp ${spixUvEnv}/bin/* $out/bin/
         '';
 
-        spixRequirementsEnvStable = mkRequirementsEnv pkgsStable.python312 (builtins.readFile ./uv-projects/spix/requirements.txt);
+        spixUvEnvStable = mkUvEnv pkgsStable.python312 ./uv-projects/spix;
         spixEnvStable = pkgsStable.runCommand "spix-env-stable" {
-          buildInputs = [ spixRequirementsEnvStable pkgsStable.python312 ];
+          buildInputs = [ spixUvEnvStable pkgsStable.python312 ];
         } ''
-          export PYTHONPATH="${spixRequirementsEnvStable}/lib/${pkgsStable.python312.libPrefix}/site-packages:$PYTHONPATH"
-          export PATH="${spixRequirementsEnvStable}/bin:$PATH"
+          export PYTHONPATH="${spixUvEnvStable}/lib/${pkgsStable.python312.libPrefix}/site-packages:$PYTHONPATH"
+          export PATH="${spixUvEnvStable}/bin:$PATH"
           export HOME=$TMPDIR
 
           mkdir -p $out/lib/${pkgsStable.python312.libPrefix}/site-packages
-          cp -r ${spixRequirementsEnvStable}/lib/${pkgsStable.python312.libPrefix}/site-packages/* $out/lib/${pkgsStable.python312.libPrefix}/site-packages/
+          cp -r ${spixUvEnvStable}/lib/${pkgsStable.python312.libPrefix}/site-packages/* $out/lib/${pkgsStable.python312.libPrefix}/site-packages/
 
-          # Install SPIX from git
+          # Install SPIX from git (uv handles most deps, we add SPIX separately)
           cp -r ${spix} $TMPDIR/spix-src
           chmod -R +w $TMPDIR/spix-src
           pip install --target $out/lib/${pkgsStable.python312.libPrefix}/site-packages --no-deps --no-build-isolation $TMPDIR/spix-src
 
           mkdir -p $out/bin
-          cp ${spixRequirementsEnvStable}/bin/* $out/bin/
+          cp ${spixUvEnvStable}/bin/* $out/bin/
         '';
 
-        # Stereopy environment from requirements.txt
-        stereopyPythonWithPip = mkRequirementsEnv pkgsOld.python38 (builtins.readFile ./uv-projects/stereopy/requirements.txt);
+        # Stereopy environment using uv
+        stereopyPythonWithPip = mkUvEnv pkgsOld.python38 ./uv-projects/stereopy;
 
-        # VisiumHD Zarr environment from requirements.txt
-        visiumhdZarrPythonWithPip = mkRequirementsEnv pkgsStable.python312 (builtins.readFile ./uv-projects/visiumhd-zarr/requirements.txt);
+        # VisiumHD Zarr environment using uv
+        visiumhdZarrPythonWithPip = mkUvEnv pkgsStable.python312 ./uv-projects/visiumhd-zarr;
 
         # ==============================================================================
         # OCI IMAGES
