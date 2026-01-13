@@ -3581,9 +3581,38 @@ wheels = [
 ]
 
 [[package]]
+name = "spix"
+version = "0.1.0"
+source = { git = "https://github.com/whistle-ch0i/SPIX.git#47abeb4d014111b5bfade2962523f94fbc6c350f" }
+dependencies = [
+    { name = "alphashape" },
+    { name = "anndata" },
+    { name = "harmonypy" },
+    { name = "igraph" },
+    { name = "joblib" },
+    { name = "matplotlib" },
+    { name = "minisom" },
+    { name = "naivede" },
+    { name = "networkx" },
+    { name = "numpy" },
+    { name = "opencv-python" },
+    { name = "pandas" },
+    { name = "requests" },
+    { name = "scanpy" },
+    { name = "scikit-image" },
+    { name = "scikit-learn" },
+    { name = "scipy" },
+    { name = "seaborn" },
+    { name = "shapely" },
+    { name = "squidpy" },
+    { name = "tqdm" },
+    { name = "tqdm-joblib" },
+]
+
+[[package]]
 name = "spix-analysis"
 version = "0.1.0"
-source = { editable = "." }
+source = { virtual = "." }
 dependencies = [
     { name = "aiobotocore" },
     { name = "aiohappyeyeballs" },
@@ -3715,6 +3744,7 @@ dependencies = [
     { name = "spatial-image" },
     { name = "spatialdata" },
     { name = "spatialdata-io" },
+    { name = "spix" },
     { name = "squidpy" },
     { name = "stack-data" },
     { name = "statsmodels" },
@@ -3877,6 +3907,7 @@ requires-dist = [
     { name = "spatial-image", specifier = "==1.2.3" },
     { name = "spatialdata", specifier = "==0.5.0" },
     { name = "spatialdata-io", specifier = "==0.3.0" },
+    { name = "spix", git = "https://github.com/whistle-ch0i/SPIX.git" },
     { name = "squidpy", specifier = "==1.6.5" },
     { name = "stack-data", specifier = "==0.6.3" },
     { name = "statsmodels", specifier = "==0.14.5" },
