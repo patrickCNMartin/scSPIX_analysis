@@ -32,10 +32,11 @@
 
             buildPhase = ''
               export HOME=$(mktemp -d)
+              export UV_CACHE_DIR=$(mktemp -d)
               cd uv-projects/${projectName}
               ${pythonPkgs}/bin/python -m venv $HOME/.venv
               export PATH="$HOME/.venv/bin:$PATH"
-              ${nixpkgs.uv}/bin/uv sync
+              ${nixpkgs.uv}/bin/uv sync --no-cache
               cd - > /dev/null
             '';
 
